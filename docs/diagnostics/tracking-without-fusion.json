@@ -1,0 +1,51 @@
+{
+  "source_seconds": 30,
+  "analysis_steps": 540,
+  "elapsed_seconds": 14.774558249861002,
+  "lifecycle": {
+    "TRACK_CREATED": 7,
+    "TRACK_UPDATED": 3208,
+    "TRACK_LOST": 2,
+    "TRACK_REMOVED": 2
+  },
+  "lost_samples": [
+    {
+      "timestamp_ms": 5960,
+      "track_id": 5,
+      "previous_bbox": [
+        785.1297607421875,
+        197.84776306152344,
+        1184.7747802734375,
+        592.9354858398438
+      ],
+      "detection_count": 6,
+      "best_iou": 0.40874776766512866,
+      "best_confidence": 0.861328125,
+      "best_bbox": [
+        976.0,
+        240.0,
+        1170.0,
+        642.5
+      ]
+    },
+    {
+      "timestamp_ms": 6040,
+      "track_id": 5,
+      "previous_bbox": [
+        782.6585083007812,
+        195.12716674804688,
+        1183.0277099609375,
+        622.8931884765625
+      ],
+      "detection_count": 6,
+      "best_iou": 0.4408147409725755,
+      "best_confidence": 0.82861328125,
+      "best_bbox": [
+        962.5,
+        241.5,
+        1166.0,
+        646.5
+      ]
+    }
+  ]
+}

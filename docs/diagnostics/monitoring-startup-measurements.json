@@ -1,0 +1,53 @@
+[
+  {
+    "run": 1,
+    "timings": {
+      "first_tracking_ms": 2497.99145385623,
+      "analysis_fps": 16.50451457822996,
+      "detector_ms": 25.770680978894234,
+      "analysis_lag_ms": 45.0,
+      "first_behavior_ms": 89516.2875847891
+    },
+    "tracking_messages": 688,
+    "min_tracks": 5,
+    "max_tracks": 6,
+    "distinct_track_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9,
+      10,
+      11
+    ],
+    "stopped": true,
+    "errors": []
+  },
+  {
+    "run": 2,
+    "timings": {
+      "first_tracking_ms": 269.90063628181815,
+      "analysis_fps": 16.505669596564832,
+      "detector_ms": 24.43009801208973,
+      "analysis_lag_ms": 30.0,
+      "first_behavior_ms": 3294.8604123666883
+    },
+    "tracking_messages": 533,
+    "min_tracks": 4,
+    "max_tracks": 6,
+    "distinct_track_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8
+    ],
+    "stopped": true,
+    "errors": []
+  }
+]

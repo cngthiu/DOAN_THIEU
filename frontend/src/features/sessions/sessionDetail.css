@@ -1,0 +1,27 @@
+.detail-heading-actions { display: flex; align-items: center; gap: 12px; }
+.detail-heading-actions .primary-button { margin-top: 0; }
+.detail-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 20px;
+}
+.detail-tabs button {
+  padding: 10px 18px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.detail-tabs button:hover {
+  color: var(--color-text);
+}
+.detail-tabs button.active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.session-overview-list { max-width: 820px; }

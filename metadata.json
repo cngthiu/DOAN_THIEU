@@ -1,0 +1,6 @@
+{
+  "name": "ExamGuard - Hệ thống giám sát phòng thi",
+  "description": "Hệ thống hỗ trợ phát hiện hành vi bất thường trong phòng thi sử dụng camera giám sát",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
