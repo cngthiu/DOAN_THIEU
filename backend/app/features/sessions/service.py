@@ -20,6 +20,7 @@ from app.db.models.session import (
 )
 from app.db.models.user import User
 from app.features.media.service import media_file_path, media_response
+from app.features.sessions.roster_xlsx import RosterWorkbookError, parse_roster_workbook
 from app.features.sessions.schemas import (
     CameraSummary,
     CandidateSummary,
@@ -600,5 +601,144 @@ def replace_assignments(
             status.HTTP_409_CONFLICT,
             "ASSIGNMENT_CONFLICT",
             "Candidate assignments could not be saved",
+        ) from error
+    return session_response(db, exam_session)
+
+
+def import_roster_xlsx(
+    db: Session,
+    session_id: uuid.UUID,
+    filename: str | None,
+    content: bytes,
+    actor: User,
+) -> SessionResponse:
+    exam_session = session_or_error(db, session_id)
+    if exam_session.status not in {ExamSessionStatus.DRAFT.value, ExamSessionStatus.READY.value}:
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            "INVALID_SESSION_STATE",
+            "Danh sách thí sinh chỉ được nhập trước khi bắt đầu giám sát",
+        )
+    if not filename or not filename.lower().endswith(".xlsx"):
+        raise ApiError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "INVALID_XLSX_FILE",
+            "Vui lòng tải lên tệp có định dạng .xlsx",
+        )
+    try:
+        roster = parse_roster_workbook(content)
+    except RosterWorkbookError as error:
+        raise ApiError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            error.code,
+            error.message,
+            error.details,
+        ) from error
+
+    room = _active_room_or_error(db, exam_session.room_id)
+    seats = list(
+        db.scalars(
+            select(Seat).where(
+                Seat.room_id == room.id,
+                Seat.is_active.is_(True),
+            )
+        )
+    )
+    seats_by_code = {seat.code.strip().upper(): seat for seat in seats}
+    unknown_seats = [row for row in roster if row.seat_code not in seats_by_code]
+    if unknown_seats:
+        raise ApiError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "SEAT_CODES_NOT_FOUND",
+            "Một số mã ghế trong XLSX không tồn tại hoặc đã bị vô hiệu hóa",
+            {
+                "rows": [row.row_number for row in unknown_seats],
+                "seat_codes": [row.seat_code for row in unknown_seats],
+            },
+        )
+
+    codes = [row.candidate_code for row in roster]
+    existing = list(db.scalars(select(Candidate).where(Candidate.candidate_code.in_(codes))))
+    candidates_by_code = {candidate.candidate_code: candidate for candidate in existing}
+    for row in roster:
+        candidate = candidates_by_code.get(row.candidate_code)
+        if candidate is not None:
+            saved_name = " ".join(candidate.full_name.split()).casefold()
+            imported_name = " ".join(row.full_name.split()).casefold()
+            if saved_name != imported_name:
+                raise ApiError(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "CANDIDATE_NAME_MISMATCH",
+                    f"Mã {row.candidate_code} đã tồn tại với họ tên khác",
+                    {
+                        "row": row.row_number,
+                        "candidate_code": row.candidate_code,
+                        "existing_name": candidate.full_name,
+                        "imported_name": row.full_name,
+                    },
+                )
+
+    try:
+        created_count = 0
+        for row in roster:
+            if row.candidate_code in candidates_by_code:
+                continue
+            candidate = Candidate(
+                candidate_code=row.candidate_code,
+                full_name=" ".join(row.full_name.split()),
+                class_name=row.class_name,
+            )
+            db.add(candidate)
+            db.flush()
+            candidates_by_code[row.candidate_code] = candidate
+            created_count += 1
+            AuditService.record(
+                db,
+                actor=actor,
+                action=AuditAction.CANDIDATE_CREATED,
+                entity_type="CANDIDATE",
+                entity_id=candidate.id,
+                metadata={
+                    "candidate_code": candidate.candidate_code,
+                    "source": "SESSION_ROSTER_XLSX",
+                    "session_id": str(exam_session.id),
+                },
+            )
+
+        db.execute(delete(SessionCandidate).where(SessionCandidate.session_id == exam_session.id))
+        db.add_all(
+            [
+                SessionCandidate(
+                    session_id=exam_session.id,
+                    candidate_id=candidates_by_code[row.candidate_code].id,
+                    seat_id=seats_by_code[row.seat_code].id,
+                )
+                for row in roster
+            ]
+        )
+        db.flush()
+        AuditService.record(
+            db,
+            actor=actor,
+            action=AuditAction.SESSION_CANDIDATES_UPDATED,
+            entity_type="EXAM_SESSION",
+            entity_id=exam_session.id,
+            metadata={
+                "session_code": exam_session.session_code,
+                "assignment_count": len(roster),
+                "candidates_created": created_count,
+                "source": "XLSX_IMPORT",
+                "filename": filename,
+                "candidate_codes": [row.candidate_code for row in roster],
+                "seat_codes": [row.seat_code for row in roster],
+            },
+        )
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            "ROSTER_IMPORT_CONFLICT",
+            "Không thể lưu danh sách thí sinh và ghế",
         ) from error
     return session_response(db, exam_session)

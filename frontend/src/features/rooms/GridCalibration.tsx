@@ -10,11 +10,11 @@ export function GridSettingsPanel({ corners, settings, onSettings, onReset, onGe
     <p>Chọn 4 góc: P1 trên trái → P2 trên phải → P3 dưới phải → P4 dưới trái. Kéo marker để chỉnh góc.</p>
     {corners.length === 4 && <div className="grid-fields">
       {(['rows', 'columns', 'horizontalPadding', 'verticalPadding'] as const).map((key, index) => <label key={key}>
-        {['Số hàng', 'Số cột', 'Padding ngang mỗi bên (%)', 'Padding dọc mỗi bên (%)'][index]}
+        {['Số hàng', 'Số cột', 'Độ co ngang mỗi bên (%)', 'Độ co dọc mỗi bên (%)'][index]}
         <input type="number" min={index < 2 ? 1 : 0} max={index < 2 ? 30 : 49} step="1" value={Number.isNaN(settings[key]) ? '' : settings[key] * (index < 2 ? 1 : 100)} onChange={event => onSettings({ ...settings, [key]: event.target.value === '' ? NaN : Number(event.target.value)/(index < 2 ? 1 : 100) })} />
       </label>)}
     </div>}
-    <p role="status">{error ?? `${settings.rows * settings.columns} ghế. Tạo bản nháp, kiểm tra và chỉnh sửa trước khi lưu.`}</p>
+    <p role="status">{error ?? `${settings.rows * settings.columns} ghế. Nên giữ độ co 0–5% để vùng bao phủ đủ thân người; tạo bản nháp, kiểm tra rồi lưu.`}</p>
     <div className="button-row">
       <button type="button" className="primary-button" disabled={Boolean(error)} onClick={onGenerate}>Tạo / Tạo lại lưới</button>
       <button type="button" className="secondary-button" onClick={onReset}>Reset corners</button>

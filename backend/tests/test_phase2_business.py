@@ -12,6 +12,7 @@ from app.db.models.media import MediaAsset
 from app.db.models.room import Room, Seat
 from app.db.models.session import ExamSession, SessionCandidate
 from app.db.models.user import User, UserRole
+from app.features.sessions.roster_xlsx import build_roster_workbook
 
 
 def add_user(db: Session, role: UserRole, username: str) -> User:
@@ -324,6 +325,81 @@ def test_session_assignments_constraints_readiness_and_transaction(
     assert db.scalar(
         select(func.count(AuditLog.id)).where(AuditLog.action == "SESSION_CANDIDATES_UPDATED")
     ) == 1
+
+
+def test_xlsx_roster_import_creates_candidates_and_assigns_seats_automatically(
+    client: TestClient,
+    db: Session,
+    settings: Settings,
+) -> None:
+    headers, session_id, _, _, _ = _prepare_assignment_data(client, db, settings)
+    workbook = build_roster_workbook(
+        (
+            ("Mã thí sinh", "Họ tên", "Lớp", "Mã ghế"),
+            ("TS001", "Nguyễn Văn A", "12A1", "A01"),
+            ("TS002", "Trần Thị B", "12A1", "A02"),
+        )
+    )
+
+    imported = client.post(
+        f"/api/v1/sessions/{session_id}/candidates/import-xlsx",
+        files={
+            "file": (
+                "danh-sach.xlsx",
+                workbook,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        headers=headers,
+    )
+    assert imported.status_code == 200
+    payload = imported.json()
+    assert payload["candidate_count"] == 2
+    assert [item["seat"]["code"] for item in payload["assignments"]] == ["A01", "A02"]
+    assert [item["candidate"]["candidate_code"] for item in payload["assignments"]] == [
+        "TS001",
+        "TS002",
+    ]
+    assert db.scalar(
+        select(func.count(Candidate.id)).where(Candidate.candidate_code.like("TS%"))
+    ) == 2
+    audit = db.scalars(
+        select(AuditLog)
+        .where(AuditLog.action == "SESSION_CANDIDATES_UPDATED")
+        .order_by(AuditLog.created_at.desc())
+    ).first()
+    assert audit is not None
+    assert audit.audit_metadata["source"] == "XLSX_IMPORT"
+    assert audit.audit_metadata["assignment_count"] == 2
+
+
+def test_xlsx_roster_import_rejects_unknown_seat_without_partial_writes(
+    client: TestClient,
+    db: Session,
+    settings: Settings,
+) -> None:
+    headers, session_id, _, _, _ = _prepare_assignment_data(client, db, settings)
+    workbook = build_roster_workbook(
+        (
+            ("Mã thí sinh", "Họ tên", "Lớp", "Mã ghế"),
+            ("NEW-001", "Người mới", "12A1", "Z99"),
+        )
+    )
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/candidates/import-xlsx",
+        files={"file": ("sai-ghe.xlsx", workbook, "application/octet-stream")},
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "SEAT_CODES_NOT_FOUND"
+    assert db.scalar(
+        select(func.count(Candidate.id)).where(Candidate.candidate_code == "NEW-001")
+    ) == 0
+    assert db.scalar(
+        select(func.count(SessionCandidate.id)).where(
+            SessionCandidate.session_id == uuid.UUID(session_id)
+        )
+    ) == 0
 
 
 def test_role_authorization(

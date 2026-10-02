@@ -8,7 +8,7 @@ import type { Camera } from '../cameras/types'
 import { VideoUpload } from '../media/VideoUpload'
 import type { MediaAsset } from '../media/types'
 import type { Room } from '../rooms/types'
-import { createSession, updateSession } from '../sessions/api'
+import { createSession, importSessionRoster, updateSession } from '../sessions/api'
 import { examDurationOptions, nextSessionCode, toLocalDateTimeInput } from '../sessions/sessionForm'
 import type { ExamSession } from '../sessions/types'
 
@@ -57,6 +57,9 @@ export function StartMonitoringModal({ rooms, recentSessions, sessionTotal, onCa
   const [cameraLoading, setCameraLoading] = useState(false)
   const [autoSelected, setAutoSelected] = useState(false)
   const [media, setMedia] = useState<MediaAsset | null>(null)
+  const [useRoster, setUseRoster] = useState(false)
+  const [rosterFile, setRosterFile] = useState<File | null>(null)
+  const [draftSessionId, setDraftSessionId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,6 +73,7 @@ export function StartMonitoringModal({ rooms, recentSessions, sessionTotal, onCa
     && date
     && time
     && validDuration
+    && (!useRoster || rosterFile)
     && (sourceMode === 'CAMERA' ? cameraId : media),
   )
 
@@ -97,23 +101,30 @@ export function StartMonitoringModal({ rooms, recentSessions, sessionTotal, onCa
     if (!canSubmit) return
     setSaving(true); setError(null)
     try {
-      const created = await createSession({
-        session_code: nextSessionCode(recentSessions, sessionTotal),
-        exam_name: name.trim(),
-        room_id: roomId,
-        scheduled_start: new Date(`${date}T${time}`).toISOString(),
-        scheduled_end: null,
-        duration_minutes: durationMinutes,
-        runtime_profile: null,
-      })
+      let sessionId = draftSessionId
+      if (!sessionId) {
+        const created = await createSession({
+          session_code: nextSessionCode(recentSessions, sessionTotal),
+          exam_name: name.trim(),
+          room_id: roomId,
+          scheduled_start: new Date(`${date}T${time}`).toISOString(),
+          scheduled_end: null,
+          duration_minutes: durationMinutes,
+          runtime_profile: null,
+        })
+        sessionId = created.id
+        setDraftSessionId(created.id)
+      }
       if (sourceMode === 'CAMERA') {
-        await updateSession(created.id, { source_type: 'CAMERA', camera_id: cameraId })
+        await updateSession(sessionId, { source_type: 'CAMERA', camera_id: cameraId })
       } else if (media) {
-        await updateSession(created.id, {
+        await updateSession(sessionId, {
           source_type: 'VIDEO_UPLOAD', camera_id: null, video_asset_id: media.id,
         })
       }
-      const ready = await updateSession(created.id, { status: 'READY' })
+      if (useRoster && rosterFile) await importSessionRoster(sessionId, rosterFile)
+      const ready = await updateSession(sessionId, { status: 'READY' })
+      setDraftSessionId(null)
       await onPrepared(ready)
     } catch (requestError) { setError(apiErrorMessage(requestError)) }
     finally { setSaving(false) }
@@ -123,7 +134,7 @@ export function StartMonitoringModal({ rooms, recentSessions, sessionTotal, onCa
     if (event.target === event.currentTarget && !saving) onCancel()
   }}>
     <section className="start-monitoring-dialog" role="dialog" aria-modal="true" aria-labelledby="start-monitoring-title">
-      <header><div><p className="eyebrow">PHIÊN GIÁM SÁT MỚI</p><h2 id="start-monitoring-title">Bắt đầu giám sát</h2><p>Chọn lịch thi, phòng và một nguồn giám sát.</p></div><button className="dialog-close" type="button" aria-label="Đóng" disabled={saving} onClick={onCancel}>×</button></header>
+      <header><div><p className="eyebrow">PHIÊN GIÁM SÁT MỚI</p><h2 id="start-monitoring-title">Thiết lập phiên giám sát</h2><p>Tạo phiên trước; AI chỉ chạy sau khi bạn bấm Bắt đầu giám sát.</p></div><button className="dialog-close" type="button" aria-label="Đóng" disabled={saving} onClick={onCancel}>×</button></header>
       <form onSubmit={submit} noValidate>
         {error && <div className="inline-alert error" role="alert">{error}</div>}
         <div className="start-form-grid">
@@ -143,7 +154,17 @@ export function StartMonitoringModal({ rooms, recentSessions, sessionTotal, onCa
         {sourceMode === 'CAMERA' ? <div className="quick-source-panel">
           <FormField label="Camera" htmlFor="quick-camera" required helper={autoSelected ? '✓ Đã chọn tự động' : undefined}><select id="quick-camera" disabled={!roomId || cameraLoading} value={cameraId} onChange={(event) => { setCameraId(event.target.value); setAutoSelected(false) }}><option value="">{cameraLoading ? 'Đang tải camera…' : !roomId ? 'Chọn phòng trước' : cameras.length ? 'Chọn camera' : 'Không có camera sẵn sàng'}</option>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</select></FormField>
         </div> : <div className="quick-source-panel"><VideoUpload onUploaded={setMedia} disabled={saving} />{media && <div className="source-success"><strong>✓ Video hợp lệ — {media.original_filename}</strong><span>{formatResolution(media.width, media.height)} · {formatFps(media.fps, 2)} · {formatDurationMs(media.duration_ms)}</span></div>}</div>}
-        <footer><button className="secondary-button" type="button" disabled={saving} onClick={onCancel}>Hủy</button><button className="primary-button" type="submit" disabled={!canSubmit || saving}>{saving ? 'Đang khởi tạo giám sát…' : 'Bắt đầu giám sát'}</button></footer>
+        <div className="quick-roster-panel">
+          <label className="check-row"><input type="checkbox" checked={useRoster} disabled={saving} onChange={(event) => { setUseRoster(event.target.checked); if (!event.target.checked) { setRosterFile(null); setError(null) } }} /> Có danh sách thí sinh và ghế</label>
+          <small>Tùy chọn. Nếu không có danh sách, hệ thống vẫn nhận diện và cảnh báo nhưng chưa hiển thị tên thí sinh.</small>
+          {useRoster && <div className="roster-upload-options">
+            <p>Chọn XLSX có các cột: Mã thí sinh, Họ tên, Lớp, Mã ghế.</p>
+            <label className="secondary-button roster-file-button">{rosterFile ? 'Đổi file Excel' : 'Chọn file Excel đã điền'}<input hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={saving} onChange={(event) => { const file = event.target.files?.[0]; setRosterFile(file?.name.toLowerCase().endsWith('.xlsx') ? file : null); if (file && !file.name.toLowerCase().endsWith('.xlsx')) setError('Vui lòng chọn tệp XLSX hợp lệ.') }} /></label>
+            <small>{rosterFile ? `✓ ${rosterFile.name}` : 'Chưa chọn file Excel'}</small>
+            {draftSessionId && <small>Phiên nháp đã được giữ lại; sửa file và bấm lại để tiếp tục.</small>}
+          </div>}
+        </div>
+        <footer><button className="secondary-button" type="button" disabled={saving} onClick={onCancel}>Hủy</button><button className="primary-button" type="submit" disabled={!canSubmit || saving}>{saving ? 'Đang tạo phiên…' : 'Tạo phiên'}</button></footer>
       </form>
     </section>
   </div>

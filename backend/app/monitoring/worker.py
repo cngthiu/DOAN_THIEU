@@ -419,6 +419,7 @@ class VideoAnalysisWorker:
                     )
                     for item in tracked
                 )
+                predicted_by_track = {item.track_id: item.predicted for item in tracked}
                 logical_snapshot = logical_tracking.update(
                     normalized_observations,
                     packet.timestamp_ms,
@@ -433,6 +434,7 @@ class VideoAnalysisWorker:
                         actor_id=logical_snapshot.actors_by_track[observation.track_id].actor_id,
                         actor_state=logical_snapshot.actors_by_track[observation.track_id].state,
                         recovered=logical_snapshot.actors_by_track[observation.track_id].recovered,
+                        predicted=predicted_by_track[observation.track_id],
                     )
                     for observation in normalized_observations
                 )
@@ -451,6 +453,7 @@ class VideoAnalysisWorker:
                         actor_id=track.actor_id,
                         actor_state=track.actor_state,
                         recovered=track.recovered,
+                        predicted=track.predicted,
                     )
                     for track in logical_tracks
                 )
@@ -477,14 +480,14 @@ class VideoAnalysisWorker:
                 if action_runtime is not None:
                     action_runtime.update(
                         packet.frame,
-                        tracks,
+                        tuple(track for track in tracks if not track.predicted),
                         packet.timestamp_ms,
                         packet.generation,
                     )
                 if cheat_runtime is not None:
                     cheat_runtime.update(
                         packet.frame,
-                        tracks,
+                        tuple(track for track in tracks if not track.predicted),
                         packet.timestamp_ms,
                         packet.generation,
                     )

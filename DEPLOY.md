@@ -51,6 +51,24 @@ chưa có tài khoản quản trị nào.)
 - Phiên `DOAN1-S07`: đã kết thúc, giữ 7 sự kiện AI mẫu (1 sự kiện đã xác nhận) trong trang *Sự kiện*.
 - Tạo phiên mới: *Giám sát → Bắt đầu giám sát*, chọn phòng; camera của phòng được chọn tự động.
 
+## Tự động định danh thí sinh theo ghế
+
+1. Trong *Phòng thi → Bố trí chỗ ngồi*, chọn khung hình của đúng camera, đánh dấu bốn góc bao quanh
+   toàn bộ vùng thân người khi ngồi (theo thứ tự trên trái → trên phải → dưới phải → dưới trái), đặt
+   độ co ngang/dọc từ 0–5% rồi dùng **Tự động tạo lưới ghế**. Đây là hiệu chỉnh một lần cho mỗi góc camera.
+2. Khi tạo phiên ở *Giám sát → Bắt đầu giám sát*, nếu có danh sách thì tích
+   **Có danh sách thí sinh và ghế**, sau đó chọn XLSX gồm các cột `Mã thí sinh`, `Họ tên`, `Lớp`,
+   `Mã ghế`. Không cần tạo và xếp từng thí sinh. Nếu không có danh sách, bỏ trống tùy chọn này và
+   hệ thống vẫn giám sát bình thường; sự kiện khi đó chưa hiển thị tên thí sinh.
+3. Hệ thống tự tạo thí sinh chưa có, kiểm tra mã ghế và xếp toàn bộ danh sách trong một giao dịch.
+   Nếu một dòng sai, không dòng nào được lưu.
+4. Khi video chạy, AI tự ghép mỗi người vào vùng ghế. Bảng trạng thái hiển thị số người đã tự nhận ghế
+   và chưa nhận ghế; cảnh báo/sự kiện dùng tên thí sinh từ XLSX.
+
+Mã ghế trong XLSX phải trùng với mã trong sơ đồ phòng, ví dụ `A01`. Nếu cùng mã thí sinh đã tồn tại
+nhưng họ tên khác, hệ thống dừng nhập để tránh gán nhầm danh tính. Có thể nhập lại XLSX ở trang chi tiết
+phiên khi phiên còn ở trạng thái Nháp hoặc Sẵn sàng.
+
 ## HTTPS
 
 Mặc định chạy HTTP trong mạng LAN (`COOKIE_SECURE=false` trong `.env`). Để truy cập qua Internet có HTTPS

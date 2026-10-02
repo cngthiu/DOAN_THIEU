@@ -134,7 +134,10 @@ cheating_classifier:
   clip_size: 356
   crop_pad: 0.15
   box_map: {dx1: -0.101, dx2: 0.094, dy1: -0.131, h: 1.021}
-  batch_size: 8
+  # The demo rooms contain six seats. Avoid padding every six-person window
+  # to eight clips: this cuts unnecessary X3D work and leaves more GPU time
+  # for YOLO tracking. Larger rooms are still processed in chunks of six.
+  batch_size: 6
   # Compile during synchronous application preload. Service startup takes longer,
   # but monitoring uses the warmed path without compiling on Start.
   compile: true

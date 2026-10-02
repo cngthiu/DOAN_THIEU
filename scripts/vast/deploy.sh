@@ -12,6 +12,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 PUBLIC_PORT=${PUBLIC_PORT:-8000}
 BACKEND_PORT=${BACKEND_PORT:-8001}
+BACKEND_HOST=127.0.0.1
 PY="$ROOT/backend/.venv/bin/python"
 
 echo "== .env"
@@ -63,26 +64,67 @@ cd "$ROOT"
 
 echo "== frontend build"
 cd frontend
+if ! command -v npm > /dev/null 2>&1 && [ -s /opt/nvm/nvm.sh ]; then
+    # Vast exposes Node through NVM only in interactive login shells.
+    . /opt/nvm/nvm.sh
+fi
 [ -d node_modules ] || npm ci --no-audit --no-fund
 npm run build
 cd "$ROOT"
 
 echo "== nginx"
-sed -e "s#listen 80;#listen $PUBLIC_PORT;#" \
-    -e "s#root /usr/share/nginx/html;#root $ROOT/frontend/dist;#" \
-    -e "s#http://backend:8000#http://127.0.0.1:$BACKEND_PORT#g" \
-    frontend/nginx.conf > /etc/nginx/sites-available/examguard
-ln -sf /etc/nginx/sites-available/examguard /etc/nginx/sites-enabled/examguard
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
-if pgrep -x nginx > /dev/null; then nginx -s reload; else nginx; fi
+if command -v nginx > /dev/null 2>&1 && [ -d /etc/nginx/sites-available ]; then
+    sed -e "s#listen 80;#listen $PUBLIC_PORT;#" \
+        -e "s#root /usr/share/nginx/html;#root $ROOT/frontend/dist;#" \
+        -e "s#http://backend:8000#http://127.0.0.1:$BACKEND_PORT#g" \
+        frontend/nginx.conf > /etc/nginx/sites-available/examguard
+    ln -sf /etc/nginx/sites-available/examguard /etc/nginx/sites-enabled/examguard
+    rm -f /etc/nginx/sites-enabled/default
+    nginx -t
+    if pgrep -x nginx > /dev/null; then nginx -s reload; else nginx; fi
+else
+    echo "nginx not installed; FastAPI serves API + frontend directly on $PUBLIC_PORT"
+    BACKEND_PORT=$PUBLIC_PORT
+    BACKEND_HOST=0.0.0.0
+fi
 
 echo "== backend"
-pkill -f "[u]vicorn app.main:app" && sleep 2 || true
-cd backend
-nohup "$PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --proxy-headers \
-    > "$ROOT/logs/backend.log" 2>&1 &
-cd "$ROOT"
+if command -v supervisorctl > /dev/null 2>&1 && [ -d /etc/supervisor/conf.d ]; then
+    supervisorctl status examguard > /dev/null 2>&1 && supervisorctl stop examguard || true
+    chmod +x "$ROOT/scripts/vast/supervisor_examguard.sh"
+    sed -e "s#__EXAMGUARD_ROOT__#$ROOT#g" \
+        -e "s#__BACKEND_HOST__#$BACKEND_HOST#g" \
+        -e "s#__BACKEND_PORT__#$BACKEND_PORT#g" \
+        "$ROOT/scripts/vast/examguard.supervisor.conf" \
+        > /etc/supervisor/conf.d/examguard.conf
+    supervisorctl reread
+    supervisorctl update
+    supervisorctl start examguard > /dev/null 2>&1 || true
+elif [ -f "$ROOT/logs/backend.pid" ]; then
+    old_pid=$(cat "$ROOT/logs/backend.pid")
+    old_cwd=$(readlink -f "/proc/$old_pid/cwd" 2> /dev/null || true)
+    old_cmd=$(tr '\0' ' ' < "/proc/$old_pid/cmdline" 2> /dev/null || true)
+    if [ "$old_cwd" = "$ROOT/backend" ] && [[ "$old_cmd" == *"uvicorn app.main:app"* ]]; then
+        kill "$old_pid" 2> /dev/null || true
+        for _ in $(seq 1 20); do
+            kill -0 "$old_pid" 2> /dev/null || break
+            sleep 0.25
+        done
+        # torch.compile may keep its own worker threads alive during shutdown.
+        kill -0 "$old_pid" 2> /dev/null && kill -KILL "$old_pid" 2> /dev/null || true
+    fi
+    cd backend
+    nohup "$PY" -m uvicorn app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --proxy-headers \
+        > "$ROOT/logs/backend.log" 2>&1 &
+    echo $! > "$ROOT/logs/backend.pid"
+    cd "$ROOT"
+else
+    cd backend
+    nohup "$PY" -m uvicorn app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --proxy-headers \
+        > "$ROOT/logs/backend.log" 2>&1 &
+    echo $! > "$ROOT/logs/backend.pid"
+    cd "$ROOT"
+fi
 for i in $(seq 1 60); do
     curl -sf "http://127.0.0.1:$BACKEND_PORT/api/v1/health" > /dev/null && break
     sleep 2

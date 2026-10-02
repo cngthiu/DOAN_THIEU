@@ -19,6 +19,7 @@ const cheatColors: Record<CheatClass, string> = {
   abnormal: '#ef4444',
 }
 const CHEAT_STATE_MAX_AGE_MS = 2600 // a decision covers the last 3.2 s and is renewed every second
+export const OVERLAY_GAP_HOLD_MS = 2000
 
 /** The actor's decision in force at this frame, or null (not classified yet / too old). */
 export function cheatStateAt(
@@ -99,6 +100,10 @@ export function startTrackingRenderLoop(
   }
 }
 
+export function shouldClearOverlayWithoutFrame(lastMatchedAtMs: number | null, nowMs: number): boolean {
+  return lastMatchedAtMs === null || nowMs - lastMatchedAtMs > OVERLAY_GAP_HOLD_MS
+}
+
 export function TrackingCanvas({ videoRef, buffer, revision, showConfidence = false, candidateCodes, debug = false, cheatStates }: TrackingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -108,6 +113,7 @@ export function TrackingCanvas({ videoRef, buffer, revision, showConfidence = fa
     if (!canvas || !video) return
     let animationId = 0
     let stopped = false
+    let lastMatchedAtMs: number | null = null
 
     const draw = () => {
       const context = canvas.getContext('2d')
@@ -121,10 +127,16 @@ export function TrackingCanvas({ videoRef, buffer, revision, showConfidence = fa
         canvas.width = targetWidth
         canvas.height = targetHeight
       }
+      const frame = buffer.nearest(video.currentTime * 1000)
+      if (!frame) {
+        if (shouldClearOverlayWithoutFrame(lastMatchedAtMs, performance.now())) {
+          clearCanvasBackingStore(context, canvas)
+        }
+        return
+      }
+      lastMatchedAtMs = performance.now()
       clearCanvasBackingStore(context, canvas)
       context.setTransform(ratio, 0, 0, ratio, 0, 0)
-      const frame = buffer.nearest(video.currentTime * 1000)
-      if (!frame) return
       const content = containedVideoRect(width, height, video.videoWidth, video.videoHeight)
       context.lineWidth = 2
       context.strokeStyle = '#22d3ee'
@@ -135,6 +147,7 @@ export function TrackingCanvas({ videoRef, buffer, revision, showConfidence = fa
         const color = cheat ? cheatColors[cheat.alert ? cheat.label : 'normal'] : '#22d3ee'
         context.lineWidth = cheat?.alert ? 3 : 2
         context.strokeStyle = color
+        context.setLineDash(track.predicted ? [7, 5] : [])
         if (cheat?.alert) { context.fillStyle = `${color}26`; context.fillRect(x1, y1, x2 - x1, y2 - y1) }
         context.strokeRect(x1, y1, x2 - x1, y2 - y1)
         const labels = trackingLabel(track, candidateCodes, debug)
@@ -153,6 +166,7 @@ export function TrackingCanvas({ videoRef, buffer, revision, showConfidence = fa
           context.fillStyle = color; context.fillRect(x1, y2 + 3, (x2 - x1) * cheat.cheat_score, 5)
         }
       }
+      context.setLineDash([])
     }
 
     const cancelVideoLoop = 'requestVideoFrameCallback' in video

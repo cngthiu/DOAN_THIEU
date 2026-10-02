@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, File, Query, UploadFile, status
 
 from app.db.models.session import ExamSessionStatus
 from app.features.auth.dependencies import (
@@ -11,6 +11,7 @@ from app.features.auth.dependencies import (
     SessionManager,
     SessionReader,
 )
+from app.features.sessions.roster_xlsx import MAX_WORKBOOK_BYTES
 from app.features.sessions.schemas import (
     SessionCandidatesUpdate,
     SessionCreate,
@@ -19,6 +20,7 @@ from app.features.sessions.schemas import (
 )
 from app.features.sessions.service import (
     create_session,
+    import_roster_xlsx,
     list_sessions,
     replace_assignments,
     session_or_error,
@@ -90,3 +92,14 @@ def put_session_candidates(
     db: DatabaseSession,
 ) -> SessionResponse:
     return replace_assignments(db, session_id, payload, actor)
+
+
+@router.post("/{session_id}/candidates/import-xlsx", response_model=SessionResponse)
+async def post_session_candidates_xlsx(
+    session_id: uuid.UUID,
+    actor: SessionManager,
+    db: DatabaseSession,
+    file: Annotated[UploadFile, File()],
+) -> SessionResponse:
+    content = await file.read(MAX_WORKBOOK_BYTES + 1)
+    return import_roster_xlsx(db, session_id, file.filename, content, actor)

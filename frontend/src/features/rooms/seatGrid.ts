@@ -2,7 +2,7 @@ import type { Seat } from './types'
 
 export interface Point { x: number; y: number }
 export interface GridSettings { rows: number; columns: number; horizontalPadding: number; verticalPadding: number }
-export const defaultGridSettings: GridSettings = { rows: 5, columns: 8, horizontalPadding: 0.15, verticalPadding: 0.15 }
+export const defaultGridSettings: GridSettings = { rows: 5, columns: 8, horizontalPadding: 0.05, verticalPadding: 0.05 }
 
 export function interpolatePoint([tl, tr, br, bl]: Point[], u: number, v: number): Point {
   return {
@@ -42,21 +42,14 @@ export function generateSeatGrid(corners: Point[], settings: GridSettings): Seat
       interpolatePoint(corners, (column+1-px)/columns, (row+1-py)/rows),
       interpolatePoint(corners, (column+px)/columns, (row+1-py)/rows),
     ]
-    const center = interpolatePoint(corners, (column+0.5)/columns, (row+0.5)/rows)
-    const halfWidth = Math.max(...cell.map(p => Math.abs(p.x-center.x)))
-    const halfHeight = Math.max(...cell.map(p => Math.abs(p.y-center.y)))
-    // Fit an axis-aligned box inside the padded convex cell. A bounding box
-    // alone protrudes outside sloping edges in strong perspective.
-    let scale = 1
-    for (let i = 0; i < 4; i++) {
-      const a = cell[i], b = cell[(i+1)%4]
-      const dx = b.x-a.x, dy = b.y-a.y
-      const distance = dx*(center.y-a.y)-dy*(center.x-a.x)
-      const extent = Math.abs(dx)*halfHeight + Math.abs(dy)*halfWidth
-      if (extent > 0) scale = Math.min(scale, distance/extent)
-    }
-    const width = 2*halfWidth*scale, height = 2*halfHeight*scale
-    return { code: `${rowCode(row)}${String(column+1).padStart(2, '0')}`, x: Math.max(0, center.x-width/2), y: Math.max(0, center.y-height/2), width, height, sort_order: index, is_active: true }
+    // Runtime matching uses axis-aligned person boxes. Enclose the complete
+    // perspective cell instead of fitting a second rectangle inside it; the
+    // old double-shrink made distant rows too small and shifted from people.
+    const left = Math.min(...cell.map(point => point.x))
+    const right = Math.max(...cell.map(point => point.x))
+    const top = Math.min(...cell.map(point => point.y))
+    const bottom = Math.max(...cell.map(point => point.y))
+    return { code: `${rowCode(row)}${String(column+1).padStart(2, '0')}`, x: left, y: top, width: right-left, height: bottom-top, sort_order: index, is_active: true }
   })
 }
 

@@ -43,6 +43,7 @@ class TrackingTrackMessage(BaseModel):
     actor_id: str = Field(min_length=1)
     actor_state: Literal["ACTIVE", "LOST", "EXPIRED"]
     recovered: bool = False
+    predicted: bool = False
     track_id: int
     bbox_norm: tuple[float, float, float, float]
     confidence: float = Field(ge=0, le=1)

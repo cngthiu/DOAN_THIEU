@@ -60,6 +60,10 @@ def main() -> None:
     prev = {}
     events = []
     counts = collections.Counter()
+    output_track_counts = []
+    observed_track_counts = []
+    predicted_steps = 0
+    prediction_samples = []
     started = time.perf_counter()
     for k in range(540):
         packet, _ = v.read_for_timestamp(round(k * 1000 / 18), 0)
@@ -68,6 +72,18 @@ def main() -> None:
         costs.clear()
         ds = d.detect(packet.frame)
         tracks = t.update(ds, packet.frame.shape[:2], packet.timestamp_ms)
+        output_track_counts.append(len(tracks))
+        observed_track_counts.append(sum(not track.predicted for track in tracks))
+        predicted_steps += any(track.predicted for track in tracks)
+        if any(track.predicted for track in tracks):
+            prediction_samples.append(
+                {
+                    "timestamp_ms": packet.timestamp_ms,
+                    "output_tracks": len(tracks),
+                    "observed_tracks": sum(not track.predicted for track in tracks),
+                    "predicted_track_ids": [track.track_id for track in tracks if track.predicted],
+                }
+            )
         active = {x.track_id: x.bbox_xyxy for x in tracks}
         for e in t.drain_lifecycle_events():
             counts[e.event] += 1
@@ -95,6 +111,11 @@ def main() -> None:
                 "analysis_steps": k + 1,
                 "elapsed_seconds": time.perf_counter() - started,
                 "lifecycle": dict(counts),
+                "minimum_output_tracks": min(output_track_counts, default=0),
+                "minimum_observed_tracks": min(observed_track_counts, default=0),
+                "steps_with_prediction_hold": predicted_steps,
+                "output_track_count_histogram": dict(collections.Counter(output_track_counts)),
+                "prediction_samples": prediction_samples,
                 "lost_samples": events,
             },
             indent=2,

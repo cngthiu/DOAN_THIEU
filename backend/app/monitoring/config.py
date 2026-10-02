@@ -53,6 +53,10 @@ class ByteTrackConfig(BaseModel):
     track_buffer: int = Field(gt=0)
     match_thresh: float = Field(ge=0, le=1)
     fuse_score: bool
+    # ByteTrack keeps a Kalman prediction internally while a detection is
+    # temporarily lost. Keep publishing that prediction briefly so one weak
+    # YOLO frame does not make every box flash off in the monitoring UI.
+    lost_track_hold_ms: int = Field(default=1500, ge=0, le=5000)
 
 
 class DiagnosticsConfig(BaseModel):

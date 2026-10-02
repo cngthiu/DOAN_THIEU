@@ -220,10 +220,10 @@ export function SeatLayoutEditor({
       <div className="section-heading">
         <div>
           <h2>Bố trí chỗ ngồi</h2>
-          <p>Tọa độ được lưu theo tỷ lệ chuẩn hóa, không phụ thuộc kích thước màn hình.</p>
+          <p>Chọn bốn góc khu vực bàn; hệ thống tự tạo lưới ghế và tự ghép người theo vị trí khi giám sát.</p>
         </div>
         {editable && <div className="button-row">
-          <button className="secondary-button" type="button" disabled={!referenceUrl || saving} onClick={() => { videoRef.current?.pause(); setConfiguring(true) }}>Tạo lưới ghế</button>
+          <button className="secondary-button" type="button" disabled={!referenceUrl || saving} onClick={() => { videoRef.current?.pause(); setConfiguring(true) }}>Tự động tạo lưới ghế</button>
           <button className="secondary-button" type="button" disabled={saving || !corners.length} onClick={() => setResetGridPending(true)}>Reset grid</button>
           <button className="secondary-button" type="button" onClick={addSeat} disabled={!referenceUrl || configuring || saving || seats.length >= 500}>Thêm chỗ ngồi</button>
         </div>}

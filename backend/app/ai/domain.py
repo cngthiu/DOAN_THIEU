@@ -20,6 +20,7 @@ class TrackedObject:
     track_id: int
     bbox_xyxy: tuple[float, float, float, float]
     confidence: float
+    predicted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,7 @@ class Track:
     actor_id: str = ""
     actor_state: ActorState = ActorState.ACTIVE
     recovered: bool = False
+    predicted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +66,7 @@ class TrackingFrame:
                     "actor_id": track.actor_id,
                     "actor_state": track.actor_state.value,
                     "recovered": track.recovered,
+                    "predicted": track.predicted,
                     "track_id": track.track_id,
                     "bbox_norm": track.bbox_norm,
                     "confidence": track.confidence,

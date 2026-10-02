@@ -11,7 +11,7 @@ Hệ thống đáp ứng luồng demo/MVP quản lý và phân tích video phòn
 | Hạng mục | Hiện trạng từ mã nguồn | Đánh giá |
 |---|---|---|
 | Đăng nhập, phân quyền, quản lý tài khoản, audit | Có API/UI và test | Đáp ứng nền tảng |
-| Phòng, vị trí ghế, thí sinh, phiên thi, phân công | Có CRUD, kiểm tra trạng thái và uniqueness | Có luồng cơ bản; ghế là bổ sung tùy chọn cho stable actor |
+| Phòng, vị trí ghế, thí sinh, phiên thi, phân công | Có CRUD, tự tạo lưới ghế, nhập XLSX thí sinh–ghế theo phiên và kiểm tra uniqueness | Người vận hành không cần gán thủ công từng thí sinh; runtime tự ghép người vào vùng ghế |
 | Upload MP4, native playback, tracking overlay | Có ffprobe, HTML5 video, WebSocket, Canvas | Phù hợp kiến trúc realtime video |
 | Start/pause/resume/seek/stop | Có runtime và kiểm thử | Đạt bộ test hiện có |
 | Sự kiện AI, tìm kiếm, xác minh | Có API/UI, review append-only và audit | Đã triển khai; AI tạo PENDING_REVIEW |
@@ -29,11 +29,12 @@ Nguồn: `docs/FUNCTIONAL_SPEC.md`, `backend/app/api/v1/router.py`, `backend/app
 
 1. **Đã xử lý — readiness hành vi:** MonitoringPage hiển thị riêng đang tải model, đang thu thập 3,2 giây hình ảnh, hoạt động, lỗi và tắt. Tracking vẫn được hiển thị độc lập.
 2. **Đã xử lý — lỗi classifier:** UI nhận `behavior_status`/`action_error`, hiển thị trạng thái suy giảm và nói rõ nhận diện người vẫn tiếp tục hoạt động.
-3. **Cao — camera có thể gây hiểu nhầm:** nhãn camera/realtime đang áp dụng cho video phát lặp. Cần ghi rõ nguồn mô phỏng hoặc hoàn thiện pipeline live camera; khi loop timestamp reset, xem lại lịch sử cần xác định đúng vòng nguồn.
-4. **Đã xử lý — trạng thái video:** panel phân biệt sẵn sàng, đang phát và tạm dừng theo runtime.
-5. **Đã xử lý — thuật ngữ kỹ thuật:** panel thông thường dùng nhãn tiếng Việt; số active/lost chỉ hiện khi bật chẩn đoán.
-6. **Vừa — khoảng ngữ cảnh:** EventClip dùng CONTEXT_MS=3000, đặc tả khuyến nghị 5000 mỗi bên. Bổ sung chứng cứ giữ nguyên ngữ cảnh và bảo vệ khỏi mất video nguồn.
-7. **Vừa — nguồn AI hiển thị cố định:** EventsPage ghi “X3D-L tự động” cho mọi source=AI; nếu bật R3 sẽ sai. Cần lưu/hiển thị provenance model đúng.
+3. **Đã xử lý — định danh theo ghế:** XLSX thí sinh–ghế là tùy chọn trong hộp tạo phiên; khi sử dụng, backend tự tạo thí sinh, gán hàng loạt và rollback toàn bộ nếu có dòng sai. Phiên không có XLSX vẫn giám sát bằng Stable Actor ID.
+4. **Cao — camera có thể gây hiểu nhầm:** nhãn camera/realtime đang áp dụng cho video phát lặp. Cần ghi rõ nguồn mô phỏng hoặc hoàn thiện pipeline live camera; khi loop timestamp reset, xem lại lịch sử cần xác định đúng vòng nguồn.
+5. **Đã xử lý — trạng thái video:** panel phân biệt sẵn sàng, đang phát và tạm dừng theo runtime.
+6. **Đã xử lý — thuật ngữ kỹ thuật:** panel thông thường dùng nhãn tiếng Việt; số active/lost chỉ hiện khi bật chẩn đoán.
+7. **Vừa — khoảng ngữ cảnh:** EventClip dùng CONTEXT_MS=3000, đặc tả khuyến nghị 5000 mỗi bên. Bổ sung chứng cứ giữ nguyên ngữ cảnh và bảo vệ khỏi mất video nguồn.
+8. **Vừa — nguồn AI hiển thị cố định:** EventsPage ghi “X3D-L tự động” cho mọi source=AI; nếu bật R3 sẽ sai. Cần lưu/hiển thị provenance model đúng.
 
 Đánh giá UX trên là từ code và test, chưa phải buổi usability test với giám thị thực hoặc kiểm thử trực quan toàn bộ trang trên trình duyệt.
 
@@ -79,7 +80,7 @@ Không tìm thấy video phòng thi gốc trong data/uploads của workspace; MP
 - Frontend `npm run typecheck`: passed.
 - Backend ban đầu thiếu pytest; cài pytest 9.1.1 vào virtualenv có sẵn, không sửa pyproject/lockfile.
 - Lượt backend mặc định: 171 passed, 4 failed, 3 skipped. Ba lỗi start API liên quan CONFIG_ROOT mặc định /app/configs không khớp workspace; một test action bất đồng bộ thất bại và đạt khi chạy riêng.
-- Lượt toàn bộ với CONFIG_ROOT đúng: **175 passed, 3 skipped**, 7 deprecation warnings. Không che lỗi bằng sửa test. Test action có dấu hiệu nhạy scheduling cần cải thiện đồng bộ.
+- Lượt toàn bộ sau bổ sung XLSX với CONFIG_ROOT đúng: **177 passed, 3 skipped**, 7 deprecation warnings từ mã/thư viện cũ. Không che lỗi bằng sửa test. Test action có dấu hiệu nhạy scheduling cần cải thiện đồng bộ.
 - Các test chủ yếu unit/API SQLite/fake model; không thay thế nghiệm thu PostgreSQL, GPU accuracy, live RTSP, browser paint, hoặc tải đa phiên.
 
 Lệnh tái lập:

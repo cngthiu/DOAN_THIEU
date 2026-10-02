@@ -4,7 +4,7 @@ import type { TrackingFrame } from './types'
 // (tens of ms on a LAN, a few hundred through a remote GPU server). A result may therefore be late by up to
 // LATE_TOLERANCE_MS, but never ahead of the player by more than AHEAD_TOLERANCE_MS (stale data after a seek).
 export const AHEAD_TOLERANCE_MS = 250
-export const LATE_TOLERANCE_MS = 1200
+export const LATE_TOLERANCE_MS = 2000
 
 function withinTolerance(frameTimestampMs: number, videoTimestampMs: number, aheadMs: number, lateMs: number): boolean {
   const offset = frameTimestampMs - videoTimestampMs
@@ -27,7 +27,7 @@ export class TrackingBuffer {
   private latestSequence = 0
   private retiredRuntimeInstances = new Set<string>()
 
-  constructor(private readonly maxAgeMs = 3000, private readonly maxItems = 64) {}
+  constructor(private readonly maxAgeMs = 4000, private readonly maxItems = 96) {}
 
   insert(frame: TrackingFrame): { accepted: boolean; reset: boolean } {
     const runtime = this.activateRuntime(frame.runtime_instance_id, frame.runtime_generation)

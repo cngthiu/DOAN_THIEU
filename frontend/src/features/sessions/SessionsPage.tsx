@@ -64,7 +64,7 @@ export function SessionsPage() {
   }
 
   return <div className="page-stack">
-    <PageHeader eyebrow="PHIÊN THI" title="Phiên thi" actions={canMonitor && <Link className="primary-button link-button" to="/monitoring">Bắt đầu giám sát</Link>} />
+    <PageHeader eyebrow="PHIÊN THI" title="Phiên thi" actions={canMonitor && <Link className="primary-button link-button" to="/monitoring">Tạo phiên giám sát</Link>} />
     {error && <ErrorState message={error} onRetry={() => void load(debouncedQuery, page, statusFilter, dateFilter)} />}
     <form className="filter-row" role="search" onSubmit={(event) => { event.preventDefault(); setPage(1); void load(query, 1, statusFilter, dateFilter) }}>
       <label className="sr-only" htmlFor="session-search">Tìm kiếm phiên thi</label>

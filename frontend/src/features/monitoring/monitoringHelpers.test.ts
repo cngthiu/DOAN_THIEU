@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { containedVideoRect, mapNormalizedBox } from './geometry'
-import { clearCanvasBackingStore, startTrackingRenderLoop, trackingLabel } from './TrackingCanvas'
+import { clearCanvasBackingStore, shouldClearOverlayWithoutFrame, startTrackingRenderLoop, trackingLabel } from './TrackingCanvas'
 import { isTrackingTimestampAligned, TrackingBuffer } from './trackingBuffer'
 import type { TrackingFrame } from './types'
 import { monitoringSocketUrl, reconnectDelay, shouldReconnect } from './useMonitoringSocket'
@@ -35,7 +35,8 @@ describe('tracking overlay helpers', () => {
     expect(buffer.size).toBe(3)
     expect(buffer.nearest(1510)?.timestamp_ms).toBe(1500)
     expect(buffer.nearest(2600)?.timestamp_ms).toBe(2000) // late result from a remote server
-    expect(buffer.nearest(3300)).toBeNull()
+    expect(buffer.nearest(3900)?.timestamp_ms).toBe(2000)
+    expect(buffer.nearest(4100)).toBeNull()
     expect(buffer.nearest(1600, 0)?.timestamp_ms).toBe(1500) // never a frame ahead of the player
     buffer.reset()
     expect(buffer.size).toBe(0)
@@ -67,6 +68,12 @@ describe('tracking overlay helpers', () => {
       ['transform', 1, 0, 0, 1, 0, 0],
       ['clear', 0, 0, 2000, 1200],
     ])
+  })
+
+  it('holds the last overlay through a short metadata gap', () => {
+    expect(shouldClearOverlayWithoutFrame(null, 1000)).toBe(true)
+    expect(shouldClearOverlayWithoutFrame(1000, 2999)).toBe(false)
+    expect(shouldClearOverlayWithoutFrame(1000, 3001)).toBe(true)
   })
 
   it('runs one video-frame callback chain and cancels it during cleanup', () => {

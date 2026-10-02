@@ -12,6 +12,7 @@ interface VideoPlayerProps {
   overlay?: ReactNode
   loop?: boolean
   realtime?: boolean
+  realtimeActive?: boolean
   onPause?(video: HTMLVideoElement): void
   onPlay?(video: HTMLVideoElement): void
   onSeeking?(video: HTMLVideoElement): void
@@ -20,7 +21,7 @@ interface VideoPlayerProps {
 }
 
 export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
-  ({ src, title, overlay, loop = false, realtime = false, onPause, onPlay, onSeeking, onSeeked, onEnded }, forwardedRef) => {
+  ({ src, title, overlay, loop = false, realtime = false, realtimeActive = false, onPause, onPlay, onSeeking, onSeeked, onEnded }, forwardedRef) => {
     const videoRef = useRef<HTMLVideoElement>(null)
     const wrapperRef = useRef<HTMLDivElement>(null)
     const [playing, setPlaying] = useState(false)
@@ -86,7 +87,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
         {loading && <div className="video-state">Đang tải video…</div>}
         {error && <div className="video-state error">{error}</div>}
       </div>
-      {realtime ? <div className="realtime-video-bar"><span className="online">● Đang phát</span><span>Luồng camera mô phỏng · 1× thời gian thực</span></div> : <div className="video-controls">
+      {realtime ? <div className="realtime-video-bar"><span className={playing ? 'online' : ''}>● {playing ? 'Đang phát' : realtimeActive ? 'Tạm dừng' : 'Chưa bắt đầu'}</span><span>{realtimeActive ? 'Luồng camera mô phỏng · 1× thời gian thực' : 'Bấm Bắt đầu giám sát để chạy video và AI'}</span></div> : <div className="video-controls">
         <button type="button" onClick={() => void toggle()}>{playing ? 'Tạm dừng' : 'Phát'}</button>
         <span>{formatVideoTime(currentTime)}</span>
         <input className="video-timeline" aria-label="Vị trí video" type="range" min="0" max={duration || 0} step="0.01" value={Math.min(currentTime, duration || 0)} onChange={(event) => {

@@ -15,6 +15,7 @@ import { permissions, usePermissions } from '../auth/permissions'
 import { getMonitoringStatus } from '../monitoring/api'
 import type { MonitoringStatus } from '../monitoring/types'
 import { getSession } from './api'
+import { RosterXlsxImport } from './RosterXlsxImport'
 import type { ExamSession } from './types'
 
 type Tab = 'OVERVIEW' | 'TRACKING' | 'SYSTEM'
@@ -35,6 +36,7 @@ export function SessionDetailPage() {
   const { can } = usePermissions()
   const canSeeSystem = can(permissions.diagnosticsRead)
   const canMonitor = can(permissions.sessionMonitor)
+  const canManage = can(permissions.sessionManage)
   const canReadEvents = can(permissions.eventRead)
   const [session, setSession] = useState<ExamSession | null>(null)
   const [runtime, setRuntime] = useState<MonitoringStatus | null>(null)
@@ -89,7 +91,7 @@ export function SessionDetailPage() {
     {error && <ErrorState message={error} onRetry={() => void load()} />}
     <nav className="detail-tabs" aria-label="Thông tin phiên thi"><button className={tab === 'OVERVIEW' ? 'active' : ''} type="button" onClick={() => setTab('OVERVIEW')}>Tổng quan</button><button className={tab === 'TRACKING' ? 'active' : ''} type="button" onClick={() => setTab('TRACKING')}>Theo dõi</button>{canSeeSystem && <button className={tab === 'SYSTEM' ? 'active' : ''} type="button" onClick={() => setTab('SYSTEM')}>Hệ thống</button>}</nav>
 
-    {tab === 'OVERVIEW' && <section className="card"><h2>Tổng quan phiên thi</h2><dl className="detail-list session-overview-list">
+    {tab === 'OVERVIEW' && <><section className="card"><h2>Tổng quan phiên thi</h2><dl className="detail-list session-overview-list">
       <div><dt>Tên phiên</dt><dd>{session.exam_name}</dd></div>
       <div><dt>Mã phiên</dt><dd>{session.session_code}</dd></div>
       <div><dt>Trạng thái</dt><dd><StatusBadge status={session.status} /></dd></div>
@@ -102,7 +104,9 @@ export function SessionDetailPage() {
       <div><dt>Thời lượng dự kiến</dt><dd>{duration(session.scheduled_start, session.scheduled_end)}</dd></div>
       <div><dt>Thời lượng thực tế</dt><dd>{duration(session.actual_start, session.actual_end)}</dd></div>
       <div><dt>Người tạo</dt><dd>{session.created_by_user.full_name ?? session.created_by_user.username}</dd></div>
-    </dl></section>}
+    </dl></section>
+      {canManage && ['DRAFT', 'READY'].includes(session.status) && <RosterXlsxImport sessionId={session.id} onImported={setSession} />}
+    </>}
 
     {tab === 'TRACKING' && <section className="card"><h2>Theo dõi phiên thi</h2>
       {trackingError && <p className="inline-alert error" role="alert">Không thể cập nhật thông tin theo dõi: {trackingError}</p>}

@@ -17,6 +17,7 @@ export interface TrackingTrack {
   actor_id: string
   actor_state: ActorState
   recovered: boolean
+  predicted?: boolean
   track_id: number
   bbox_norm: [number, number, number, number]
   confidence: number

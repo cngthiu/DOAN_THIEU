@@ -8,6 +8,7 @@ interface VideoMonitorProps {
   overlay?: ReactNode
   loop?: boolean
   realtime?: boolean
+  realtimeActive?: boolean
   onPause?(video: HTMLVideoElement): void
   onPlay?(video: HTMLVideoElement): void
   onSeeking?(video: HTMLVideoElement): void

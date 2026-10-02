@@ -145,7 +145,10 @@ def test_bytetrack_adapter_extracts_ids_handles_empty_and_resets() -> None:
     assert [(event.event, event.track_id) for event in tracker.drain_lifecycle_events()] == [
         ("TRACK_CREATED", 1)
     ]
-    assert tracker.update([], (100, 100), 80) == []
+    held = tracker.update([], (100, 100), 80)
+    assert len(held) == 1
+    assert held[0].track_id == first[0].track_id
+    assert held[0].predicted is True
     assert tracker.drain_lifecycle_events()[0].event == "TRACK_LOST"
     with pytest.raises(ValueError, match="timestamp must increase"):
         tracker.update([detection], (100, 100), 80)
@@ -164,10 +167,11 @@ def test_runtime_profiles_match_phase_four_contract() -> None:
     assert gtx.analysis.minimum_fps == 10.0
     assert gtx.analysis.queue_size == 1
     assert gtx.analysis.drop_stale_frames is True
-    assert gtx.tracker.track_buffer == 30
+    assert gtx.tracker.track_buffer == 60
+    assert gtx.tracker.lost_track_hold_ms == 3000
     assert gtx.detector.iou == 0.50
     assert gtx.detector.max_det == 64
-    assert gtx.tracker.new_track_thresh == 0.40
+    assert gtx.tracker.new_track_thresh == 0.35
     assert gtx.detector.duplicate_suppression.enabled is True
     assert gtx.detector.duplicate_suppression.containment_threshold == 0.90
     assert gtx.detector.duplicate_suppression.preferred_detection_confidence == 0.25
@@ -184,7 +188,10 @@ def test_runtime_profiles_match_phase_four_contract() -> None:
     assert gtx.ui.tracking_interpolation is False
     assert gtx.ui.tracking_smoothing is False
     assert rtx.analysis.target_fps == 18
-    assert rtx.tracker.track_buffer == 30
+    assert rtx.tracker.track_buffer == 60
+    assert rtx.tracker.lost_track_hold_ms == 3000
+    assert rtx.tracker.new_track_thresh == 0.35
+    assert rtx.cheating_classifier.batch_size == 6
     assert gtx.detector.model == Path("/models/detection/yolo11n.pt")
     standalone = load_runtime_profile_from_paths(
         config_root=root,
@@ -202,12 +209,26 @@ def test_bytetrack_recovers_same_id_after_short_detection_gap(misses: int) -> No
     detection = Detection((10, 10, 40, 80), 0.9, 0)
     first = tracker.update([detection], (100, 100), 0)[0]
     for step in range(1, misses + 1):
-        assert tracker.update([], (100, 100), step * 100) == []
+        held = tracker.update([], (100, 100), step * 100)
+        assert len(held) == 1
+        assert held[0].track_id == first.track_id
+        assert held[0].predicted is True
     recovered = tracker.update([detection], (100, 100), (misses + 1) * 100)
     assert recovered[0].track_id == first.track_id
+    assert recovered[0].predicted is False
     for step in range(misses + 2, misses + 25):
         tracker.update([], (100, 100), step * 100)
     assert any(event.event == "TRACK_REMOVED" for event in tracker.drain_lifecycle_events())
+
+
+def test_bytetrack_stops_publishing_prediction_after_hold_window() -> None:
+    tracker = ByteTrackAdapter(tracker_config().model_copy(update={"lost_track_hold_ms": 250}))
+    detection = Detection((10, 10, 40, 80), 0.9, 0)
+    tracker.update([detection], (100, 100), 0)
+
+    assert tracker.update([], (100, 100), 100)[0].predicted is True
+    assert tracker.update([], (100, 100), 200)[0].predicted is True
+    assert tracker.update([], (100, 100), 300) == []
 
 
 def test_detector_registry_reuses_predictor_but_isolates_worker_diagnostics(monkeypatch) -> None:
@@ -246,7 +267,9 @@ def test_score_fusion_keeps_weak_overlapping_detection_at_calibrated_match_gate(
     original = tracker.update([Detection((10, 10, 50, 90), 0.9, 0)], (100, 100), 0)[0]
     # IoU=.75, conf=.26 -> fused cost=.805. The old .80 gate loses this person.
     tracks = tracker.update([Detection((15, 10, 45, 90), 0.26, 0)], (100, 100), 56)
-    assert bool(tracks) is matched
+    observed = [track for track in tracks if not track.predicted]
+    assert bool(observed) is matched
     if matched:
-        assert tracks[0].track_id == original.track_id
-    assert tracker.update([Detection((70, 10, 90, 90), 0.26, 0)], (100, 100), 112) == []
+        assert observed[0].track_id == original.track_id
+    distant = tracker.update([Detection((70, 10, 90, 90), 0.26, 0)], (100, 100), 112)
+    assert [track for track in distant if not track.predicted] == []

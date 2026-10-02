@@ -29,3 +29,11 @@ export async function saveAssignments(
 ): Promise<ExamSession> {
   return (await apiClient.put<ExamSession>(`/sessions/${id}/candidates`, { assignments })).data
 }
+
+export async function importSessionRoster(id: string, file: File): Promise<ExamSession> {
+  const body = new FormData()
+  body.append('file', file)
+  return (await apiClient.post<ExamSession>(`/sessions/${id}/candidates/import-xlsx`, body, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })).data
+}
