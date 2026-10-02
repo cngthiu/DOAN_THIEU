@@ -185,6 +185,8 @@ def test_content_supports_cookie_full_range_invalid_range_and_auth(
     assert full.status_code == 200
     assert full.content == b"0123456789"
     assert full.headers["accept-ranges"] == "bytes"
+    assert full.headers["cache-control"] == "private, max-age=3600"
+    assert full.headers["etag"] == f'"{asset.sha256}"'
     partial = client.get(
         f"/api/v1/media/{asset.id}/content",
         headers={"Range": "bytes=2-5"},

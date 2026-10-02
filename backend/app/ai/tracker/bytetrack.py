@@ -31,6 +31,27 @@ def _bbox_iou(
     return intersection / union if union > 0 else 0.0
 
 
+def _same_person_region(
+    left: tuple[float, float, float, float],
+    right: tuple[float, float, float, float],
+) -> bool:
+    """Recognize a full-body/torso hand-off as the same image region.
+
+    A torso detection can be almost completely inside the previous full-body
+    track while their IoU stays below the normal association gate. Treating
+    containment as overlap prevents the lost full-body prediction and the new
+    torso track from being published together.
+    """
+    intersection_width = max(0.0, min(left[2], right[2]) - max(left[0], right[0]))
+    intersection_height = max(0.0, min(left[3], right[3]) - max(left[1], right[1]))
+    intersection = intersection_width * intersection_height
+    left_area = max(0.0, left[2] - left[0]) * max(0.0, left[3] - left[1])
+    right_area = max(0.0, right[2] - right[0]) * max(0.0, right[3] - right[1])
+    smaller_area = min(left_area, right_area)
+    containment = intersection / smaller_area if smaller_area > 0 else 0.0
+    return _bbox_iou(left, right) >= 0.30 or containment >= 0.80
+
+
 class ByteTrackAdapter:
     def __init__(self, config: ByteTrackConfig) -> None:
         self.config = config
@@ -43,6 +64,7 @@ class ByteTrackAdapter:
         self._last_timestamp_ms: int | None = None
         self._last_observed_ms: dict[int, int] = {}
         self._last_confidence: dict[int, float] = {}
+        self._last_bbox: dict[int, tuple[float, float, float, float]] = {}
 
     def update(
         self,
@@ -75,6 +97,7 @@ class ByteTrackAdapter:
         for item in observed:
             self._last_observed_ms[item.track_id] = timestamp_ms
             self._last_confidence[item.track_id] = item.confidence
+            self._last_bbox[item.track_id] = item.bbox_xyxy
 
         # Ultralytics intentionally omits lost tracks from `results`, although
         # ByteTrack still owns their Kalman state in `lost_stracks`. Publishing
@@ -85,17 +108,28 @@ class ByteTrackAdapter:
         predicted: list[TrackedObject] = []
         if self.config.lost_track_hold_ms:
             observed_boxes = [item.bbox_xyxy for item in observed]
-            for track in getattr(self._tracker, "lost_stracks", ()):
+            lost_tracks = sorted(
+                getattr(self._tracker, "lost_stracks", ()),
+                key=lambda item: (
+                    self._last_observed_ms.get(int(item.track_id), -1),
+                    self._last_confidence.get(int(item.track_id), 0.0),
+                ),
+                reverse=True,
+            )
+            for track in lost_tracks:
                 track_id = int(track.track_id)
                 last_seen = self._last_observed_ms.get(track_id)
                 if last_seen is None or timestamp_ms - last_seen > self.config.lost_track_hold_ms:
                     continue
-                bbox = tuple(float(value) for value in track.xyxy)
-                # A re-created track around the same person often starts as a
-                # smaller torso box. Its IoU with the older full-body Kalman
-                # box is commonly only 0.30-0.50, so a 0.60 gate publishes two
-                # boxes for one person during the hand-off.
-                if any(_bbox_iou(bbox, current) >= 0.30 for current in observed_boxes):
+                # Keep the last observed box instead of exposing an unchecked
+                # Kalman extrapolation. In static exam scenes the extrapolated
+                # box can drift across an empty desk for several seconds.
+                bbox = self._last_bbox.get(track_id)
+                if bbox is None:
+                    continue
+                if any(_same_person_region(bbox, current) for current in observed_boxes):
+                    continue
+                if any(_same_person_region(bbox, item.bbox_xyxy) for item in predicted):
                     continue
                 predicted.append(
                     TrackedObject(
@@ -124,6 +158,7 @@ class ByteTrackAdapter:
         for track_id in removed_ids:
             self._last_observed_ms.pop(track_id, None)
             self._last_confidence.pop(track_id, None)
+            self._last_bbox.pop(track_id, None)
         return observed + predicted
 
     def debug_snapshot(self, track_ids: set[int], limit: int) -> list[dict[str, object]]:
@@ -163,3 +198,4 @@ class ByteTrackAdapter:
         self._last_timestamp_ms = None
         self._last_observed_ms.clear()
         self._last_confidence.clear()
+        self._last_bbox.clear()

@@ -30,7 +30,7 @@ import {
 } from './api'
 import { StartMonitoringModal } from './StartMonitoringModal'
 import { cheatLabels, TrackingCanvas } from './TrackingCanvas'
-import { isTrackingTimestampAligned, TrackingBuffer } from './trackingBuffer'
+import { isTrackingTimestampAligned, LatestSeekScheduler, TrackingBuffer } from './trackingBuffer'
 import type { CheatActorState, CheatDiagnostics, MonitoringMessage, MonitoringStatus, RuntimeDiagnostics, TrackingTrack } from './types'
 import { useMonitoringSocket } from './useMonitoringSocket'
 
@@ -92,6 +92,7 @@ export function MonitoringPage() {
   const canReadEvents = can(permissions.eventRead)
   const videoRef = useRef<HTMLVideoElement>(null)
   const trackingBuffer = useRef(new TrackingBuffer())
+  const seekScheduler = useRef(new LatestSeekScheduler())
   const synchronizingRef = useRef(false)
   const suppressVideoEvents = useRef(false)
   const lastTrackUiUpdate = useRef(0)
@@ -128,6 +129,7 @@ export function MonitoringPage() {
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
+    seekScheduler.current.cancel()
     trackingBuffer.current.reset(); setCheatStates(new Map()); setCheatDiagnostics(null); setActiveTracks([]); setDiagnostics(null); setElapsedMs(0); setSynchronizing(false); synchronizingRef.current = false; autoSyncedRuntime.current = null; setOverlayRevision((value) => value + 1)
     if (!selectedId) { setRuntime(inactiveStatus); setDiagnostics(null); return }
     getMonitoringStatus(selectedId).then((status) => {
@@ -271,7 +273,10 @@ export function MonitoringPage() {
     }
   }, [loadSessionEvents, resetTracking, selected?.source_type, selectedId])
 
-  useEffect(() => () => trackingBuffer.current.reset(), [])
+  useEffect(() => () => {
+    seekScheduler.current.cancel()
+    trackingBuffer.current.reset()
+  }, [])
   const activeAlerts = [...cheatStates.values()].filter((state) => state.alert)
   const candidateNames = new Map(selected?.assignments.map((item) => [item.id, `${item.candidate.candidate_code} — ${item.candidate.full_name}`]) ?? [])
   const socketConnected = useMonitoringSocket({ sessionId: selectedId, enabled: runtimeActive, onMessage: handleSocketMessage })
@@ -291,6 +296,7 @@ export function MonitoringPage() {
 
   const start = useCallback(async () => {
     if (!selected || !videoRef.current) return
+    seekScheduler.current.cancel()
     const video = videoRef.current
     try { await video.play() } catch { setError('Trình duyệt không thể bắt đầu phát video.'); return }
     trackingBuffer.current.reset(); resetTracking(true)
@@ -311,9 +317,14 @@ export function MonitoringPage() {
   }
   const seek = (video: HTMLVideoElement) => {
     if (!runtimeActive || !canOperate) return
-    resetTracking(true); void perform(() => seekMonitoring(selectedId, Math.round(video.currentTime * 1000)))
+    const timestampMs = Math.round(video.currentTime * 1000)
+    seekScheduler.current.schedule(() => {
+      resetTracking(true)
+      void perform(() => seekMonitoring(selectedId, timestampMs))
+    })
   }
   const stop = async () => {
+    seekScheduler.current.cancel()
     suppressVideoEvents.current = true; videoRef.current?.pause()
     const status = await perform(() => stopMonitoring(selectedId)); trackingBuffer.current.reset(); resetTracking()
     if (status) {

@@ -20,6 +20,25 @@ export function isTrackingTimestampAligned(
   return withinTolerance(frameTimestampMs, videoTimestampMs, aheadMs, lateMs)
 }
 
+export class LatestSeekScheduler {
+  private timeout: ReturnType<typeof setTimeout> | null = null
+
+  constructor(private readonly delayMs = 180) {}
+
+  schedule(commit: () => void): void {
+    this.cancel()
+    this.timeout = globalThis.setTimeout(() => {
+      this.timeout = null
+      commit()
+    }, this.delayMs)
+  }
+
+  cancel(): void {
+    if (this.timeout !== null) globalThis.clearTimeout(this.timeout)
+    this.timeout = null
+  }
+}
+
 export class TrackingBuffer {
   private frames: TrackingFrame[] = []
   private runtimeInstanceId: string | null = null

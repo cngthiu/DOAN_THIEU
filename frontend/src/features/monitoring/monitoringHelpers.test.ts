@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { containedVideoRect, mapNormalizedBox } from './geometry'
 import { clearCanvasBackingStore, shouldClearOverlayWithoutFrame, startTrackingRenderLoop, trackingLabel } from './TrackingCanvas'
-import { isTrackingTimestampAligned, TrackingBuffer } from './trackingBuffer'
+import { isTrackingTimestampAligned, LatestSeekScheduler, TrackingBuffer } from './trackingBuffer'
 import type { TrackingFrame } from './types'
 import { monitoringSocketUrl, reconnectDelay, shouldReconnect } from './useMonitoringSocket'
 
@@ -55,6 +55,21 @@ describe('tracking overlay helpers', () => {
     expect(buffer.insert(frame(200, 1, 'runtime-b', 0))).toEqual({ accepted: true, reset: true })
     expect(buffer.insert(frame(5100, 2, 'runtime-a', 1)).accepted).toBe(false)
     expect(buffer.nearest(200)?.runtime_instance_id).toBe('runtime-b')
+  })
+
+  it('coalesces rapid timeline changes into one seek', () => {
+    vi.useFakeTimers()
+    const committed: number[] = []
+    const scheduler = new LatestSeekScheduler(180)
+    scheduler.schedule(() => committed.push(1000))
+    scheduler.schedule(() => committed.push(2000))
+    scheduler.schedule(() => committed.push(3000))
+
+    vi.advanceTimersByTime(179)
+    expect(committed).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(committed).toEqual([3000])
+    vi.useRealTimers()
   })
 
   it('clears the complete device-pixel backing store before drawing', () => {

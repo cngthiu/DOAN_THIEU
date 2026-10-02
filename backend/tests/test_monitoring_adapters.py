@@ -9,7 +9,7 @@ import torch
 
 from app.ai.detector.yolo import PersonDetector, suppress_nested_person_detections
 from app.ai.domain import Detection, normalize_bbox
-from app.ai.tracker.bytetrack import ByteTrackAdapter
+from app.ai.tracker.bytetrack import ByteTrackAdapter, _same_person_region
 from app.cli.render_tracking_artifact import nearest_row
 from app.monitoring.config import (
     ByteTrackConfig,
@@ -168,10 +168,10 @@ def test_runtime_profiles_match_phase_four_contract() -> None:
     assert gtx.analysis.queue_size == 1
     assert gtx.analysis.drop_stale_frames is True
     assert gtx.tracker.track_buffer == 60
-    assert gtx.tracker.lost_track_hold_ms == 3000
+    assert gtx.tracker.lost_track_hold_ms == 600
     assert gtx.detector.iou == 0.50
     assert gtx.detector.max_det == 64
-    assert gtx.tracker.new_track_thresh == 0.35
+    assert gtx.tracker.new_track_thresh == 0.40
     assert gtx.detector.duplicate_suppression.enabled is True
     assert gtx.detector.duplicate_suppression.containment_threshold == 0.90
     assert gtx.detector.duplicate_suppression.preferred_detection_confidence == 0.25
@@ -189,8 +189,8 @@ def test_runtime_profiles_match_phase_four_contract() -> None:
     assert gtx.ui.tracking_smoothing is False
     assert rtx.analysis.target_fps == 18
     assert rtx.tracker.track_buffer == 60
-    assert rtx.tracker.lost_track_hold_ms == 3000
-    assert rtx.tracker.new_track_thresh == 0.35
+    assert rtx.tracker.lost_track_hold_ms == 600
+    assert rtx.tracker.new_track_thresh == 0.40
     assert rtx.cheating_classifier.batch_size == 6
     assert gtx.detector.model == Path("/models/detection/yolo11n.pt")
     standalone = load_runtime_profile_from_paths(
@@ -229,6 +229,26 @@ def test_bytetrack_stops_publishing_prediction_after_hold_window() -> None:
     assert tracker.update([], (100, 100), 100)[0].predicted is True
     assert tracker.update([], (100, 100), 200)[0].predicted is True
     assert tracker.update([], (100, 100), 300) == []
+
+
+def test_bytetrack_holds_last_observed_box_instead_of_drifting_prediction() -> None:
+    tracker = ByteTrackAdapter(tracker_config().model_copy(update={"lost_track_hold_ms": 500}))
+    tracker.update([Detection((10, 10, 40, 80), 0.9, 0)], (100, 100), 0)
+    observed = tracker.update([Detection((20, 10, 50, 80), 0.9, 0)], (100, 100), 100)[0]
+
+    predicted = tracker.update([], (100, 100), 200)[0]
+
+    assert predicted.predicted is True
+    assert predicted.bbox_xyxy == observed.bbox_xyxy
+
+
+def test_person_region_matches_contained_torso_but_not_neighbor() -> None:
+    full_body = (100.0, 100.0, 300.0, 700.0)
+    torso = (120.0, 120.0, 280.0, 430.0)
+    neighbor = (310.0, 120.0, 470.0, 430.0)
+
+    assert _same_person_region(full_body, torso) is True
+    assert _same_person_region(full_body, neighbor) is False
 
 
 def test_detector_registry_reuses_predictor_but_isolates_worker_diagnostics(monkeypatch) -> None:

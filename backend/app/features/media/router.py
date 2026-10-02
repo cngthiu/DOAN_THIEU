@@ -99,7 +99,11 @@ def get_media_content(
     headers = {
         "Accept-Ranges": "bytes",
         "Content-Length": str(requested_range.length if requested_range else file_size),
-        "Cache-Control": "private, no-store",
+        # Media assets are immutable and addressed by UUID. Let the browser
+        # reuse buffered ranges while keeping authenticated video out of shared
+        # caches; this avoids re-reading the MP4 after every timeline seek.
+        "Cache-Control": "private, max-age=3600",
+        "ETag": f'"{asset.sha256}"',
     }
     response_status = status.HTTP_200_OK
     if requested_range is not None:
