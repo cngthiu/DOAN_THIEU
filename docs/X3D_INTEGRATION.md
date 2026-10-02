@@ -14,15 +14,17 @@ tracking frame (YOLO11n -> ByteTrack -> Stable Actor -> Seat -> SessionCandidate
   -> X3D-L on its own thread (capacity 1, newest window wins; tracking never waits)
   -> smoothing (3 windows) + hysteresis (start 0.85 / keep 0.70) + min 2 windows
   -> cheat_prediction WebSocket message (per-actor probabilities, alert, label)
-  -> closed alert with a SessionCandidate -> AggregatedEvent -> persist_ai_event (Event + EventActor + audit)
+  -> closed alert -> AggregatedEvent -> persist_ai_event (Event + optional EventActor + audit)
 ```
 
 - Code: `backend/app/ai/cheating_classifier/` (model, runtime), wired in `monitoring/worker.py` and
   `monitoring/manager.py`; configuration `cheating_classifier` in `configs/runtime/rtx3060.yaml`.
-- The model is loaded and `torch.compile`d once at backend start-up (about 70 s), shared by all sessions.
+- The model is loaded, compiled and warmed synchronously before the API becomes ready, then shared by
+  all sessions. A cold RTX 3060 run on 02/10/2026 took 66.5 s; after that, two consecutive six-actor
+  windows took 193.7 ms and 194.1 ms. Monitoring does not pay the compile cost after the API is ready.
 - Label -> behaviour: looking -> SUSPICIOUS_LOOKING, interaction -> COMMUNICATING (one actor per event:
   the classifier flags each participant), phone_cheatsheet -> USING_PHONE_CHEAT_SHEET.
-- Alerts of people not assigned to a seat are shown live but not stored (an Event needs a SessionCandidate).
+- Alerts without a resolved seat are stored as unidentified events and can be assigned during review.
 - The R3/TSM event FSM stays in the code base; a profile enables one of the two event sources.
 
 ## API and UI

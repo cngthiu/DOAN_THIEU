@@ -135,6 +135,8 @@ cheating_classifier:
   crop_pad: 0.15
   box_map: {dx1: -0.101, dx2: 0.094, dy1: -0.131, h: 1.021}
   batch_size: 8
+  # Compile during synchronous application preload. Service startup takes longer,
+  # but monitoring uses the warmed path without compiling on Start.
   compile: true
   max_actor_gap_ms: 5000
   rule:

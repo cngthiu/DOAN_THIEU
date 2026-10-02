@@ -24,6 +24,11 @@ class MonitoringStatusResponse(BaseModel):
     worker_instance_id: uuid.UUID | None = None
     tracker_instance_id: uuid.UUID | None = None
     tracking_seq: int = Field(default=0, ge=0)
+    tracking_readiness: Literal["INACTIVE", "LOADING", "READY", "ERROR"] = "INACTIVE"
+    behavior_readiness: Literal[
+        "DISABLED", "INACTIVE", "LOADING", "BUFFERING", "READY", "ERROR"
+    ] = "INACTIVE"
+    behavior_error: str | None = None
 
 
 class TrackIdentityMessage(BaseModel):
@@ -171,3 +176,17 @@ class RuntimeStateMessage(BaseModel):
     worker_instance_id: uuid.UUID | None = None
     tracker_instance_id: uuid.UUID | None = None
     tracking_seq: int = Field(ge=0)
+    tracking_readiness: Literal["INACTIVE", "LOADING", "READY", "ERROR"]
+    behavior_readiness: Literal[
+        "DISABLED", "INACTIVE", "LOADING", "BUFFERING", "READY", "ERROR"
+    ]
+    behavior_error: str | None
+
+
+class BehaviorStatusMessage(BaseModel):
+    type: Literal["behavior_status"]
+    session_id: uuid.UUID
+    runtime_instance_id: uuid.UUID
+    runtime_generation: int = Field(ge=0)
+    state: Literal["LOADING", "BUFFERING", "READY", "ERROR"]
+    error: str | None = None

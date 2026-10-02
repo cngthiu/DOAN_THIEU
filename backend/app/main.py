@@ -1,5 +1,4 @@
 import logging
-import threading
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -88,7 +87,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         event_callback=_persist_ai_event,
     )
     application.state.monitoring_runtime = manager
-    threading.Thread(target=_preload_models, args=(manager,), daemon=True).start()
+    # Finish the one-time YOLO/X3D compile and warmup before accepting requests.
+    # This deliberately moves the cold-start cost to service startup so pressing
+    # Start never races with model initialization.
+    _preload_models(manager)
     try:
         yield
     finally:

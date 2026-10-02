@@ -2,6 +2,8 @@ export type RuntimeState = 'INACTIVE' | 'INITIALIZING' | 'RUNNING' | 'PAUSED' | 
 export type AssignmentState = 'UNASSIGNED' | 'TENTATIVE' | 'ASSIGNED'
 export type SeatOccupancyState = 'EMPTY' | 'OCCUPIED' | 'GRACE'
 export type ActorState = 'ACTIVE' | 'LOST' | 'EXPIRED'
+export type TrackingReadiness = 'INACTIVE' | 'LOADING' | 'READY' | 'ERROR'
+export type BehaviorReadiness = 'DISABLED' | 'INACTIVE' | 'LOADING' | 'BUFFERING' | 'READY' | 'ERROR'
 
 export interface TrackIdentity {
   state: AssignmentState
@@ -174,6 +176,18 @@ export interface RuntimeStateMessage {
   worker_instance_id: string | null
   tracker_instance_id: string | null
   tracking_seq: number
+  tracking_readiness: TrackingReadiness
+  behavior_readiness: BehaviorReadiness
+  behavior_error: string | null
+}
+
+export interface BehaviorStatusMessage {
+  type: 'behavior_status'
+  session_id: string
+  runtime_instance_id: string
+  runtime_generation: number
+  state: Exclude<BehaviorReadiness, 'DISABLED' | 'INACTIVE'>
+  error: string | null
 }
 
 export type CheatClass = 'normal' | 'looking' | 'interaction' | 'phone_cheatsheet' | 'abnormal'
@@ -230,7 +244,7 @@ export interface CheatEventMessage {
   events_total: number
 }
 
-export type MonitoringMessage = TrackingFrame | RuntimeDiagnostics | RuntimeStateMessage | ActionPredictionMessage | ActionErrorMessage | CheatPredictionMessage | CheatEventMessage
+export type MonitoringMessage = TrackingFrame | RuntimeDiagnostics | RuntimeStateMessage | BehaviorStatusMessage | ActionPredictionMessage | ActionErrorMessage | CheatPredictionMessage | CheatEventMessage
 
 export interface MonitoringStatus {
   session_id: string
@@ -246,4 +260,7 @@ export interface MonitoringStatus {
   worker_instance_id: string | null
   tracker_instance_id: string | null
   tracking_seq: number
+  tracking_readiness: TrackingReadiness
+  behavior_readiness: BehaviorReadiness
+  behavior_error: string | null
 }

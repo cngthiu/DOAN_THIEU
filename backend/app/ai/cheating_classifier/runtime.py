@@ -97,6 +97,7 @@ class CheatingClassifierRuntime:
         self._started_at = time.perf_counter()
         self._first_job = True
         self._first_result = True
+        self._behavior_ready = False
         self.session_id = session_id
         self.runtime_instance_id = runtime_instance_id
         self.config = config
@@ -240,6 +241,8 @@ class CheatingClassifierRuntime:
             self._actors.clear()
             self._sample = -1
             self._last_job_sample = None
+            self._behavior_ready = False
+        self._publish_status("BUFFERING")
         for event in ended:
             self._emit(event)
 
@@ -260,15 +263,33 @@ class CheatingClassifierRuntime:
         return not self._thread.is_alive()
 
     # ---------- classifier thread ----------
+    def _publish_status(self, state: str, error: str | None = None) -> None:
+        self._publish(
+            {
+                "type": "behavior_status",
+                "session_id": str(self.session_id),
+                "runtime_instance_id": str(self.runtime_instance_id),
+                "runtime_generation": self._generation,
+                "state": state,
+                "error": error,
+            }
+        )
+
     def _infer_loop(self) -> None:
+        self._publish_status("LOADING")
         try:
             self._model.ensure_loaded()
             self._classes = self._model.classes
             self._n_frames = self._model.num_frames
             self._min_boxes = int(np.ceil(self.config.min_coverage * self._n_frames))
             self._model_ready.set()
+            self._publish_status("BUFFERING")
         except Exception:
             logger.exception("X3D initialization failed for session=%s", self.session_id)
+            error_message = (
+                "Không thể khởi tạo AI phân tích hành vi. Tracking vẫn tiếp tục hoạt động."
+            )
+            self._publish_status("ERROR", error_message)
             self._publish(
                 {
                     "type": "action_error",
@@ -276,7 +297,7 @@ class CheatingClassifierRuntime:
                     "runtime_instance_id": str(self.runtime_instance_id),
                     "runtime_generation": self._generation,
                     "timestamp_ms": 0,
-                    "error": "X3D initialization failed; see server logs",
+                    "error": error_message,
                 }
             )
             return
@@ -383,6 +404,9 @@ class CheatingClassifierRuntime:
                 job.timestamp_ms,
             )
             self._first_result = False
+        if not self._behavior_ready:
+            self._behavior_ready = True
+            self._publish_status("READY")
         self._publish(message)
         for event in ended:
             self._emit(event)

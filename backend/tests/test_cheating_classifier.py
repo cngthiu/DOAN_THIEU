@@ -244,6 +244,7 @@ def test_rtx3060_profile_enables_the_x3d_classifier() -> None:
     )
     config = profile.cheating_classifier
     assert config.enabled and not profile.event_detection.enabled
+    assert config.compile
     assert config.model == Path("/srv/models/cheating/x3d_l_v1_best.pt")
     assert (config.rule.start_threshold, config.rule.keep_threshold) == (0.85, 0.70)
 
@@ -294,12 +295,13 @@ def test_async_model_initialization_does_not_block_tracking_caller() -> None:
         def ensure_loaded(self) -> None:
             assert release.wait(5)
 
+    messages: list[dict] = []
     runtime = CheatingClassifierRuntime(
         session_id=uuid.uuid4(),
         runtime_instance_id=uuid.uuid4(),
         config=CheatingClassifierConfig(enabled=True),
         model=SlowModel(),
-        publish=lambda _: None,
+        publish=messages.append,
         load_async=True,
     )
     try:
@@ -310,6 +312,9 @@ def test_async_model_initialization_does_not_block_tracking_caller() -> None:
         assert runtime._model_ready.wait(5)
         run(runtime, (track(None),), 0, 4000)
         assert runtime._actors["A1"].state is not None
+        states = [message["state"] for message in messages if message["type"] == "behavior_status"]
+        assert states[0:2] == ["LOADING", "BUFFERING"]
+        assert states[-1] == "READY"
     finally:
         release.set()
         assert runtime.close()

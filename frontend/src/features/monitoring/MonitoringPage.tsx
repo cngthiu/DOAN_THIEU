@@ -39,10 +39,22 @@ const inactiveStatus: MonitoringStatus = {
   subscriber_count: 0, queue_size: 0, dropped_analysis_frames: 0, diagnostics: null,
   runtime_instance_id: null, runtime_generation: null, worker_instance_id: null,
   tracker_instance_id: null, tracking_seq: 0,
+  tracking_readiness: 'INACTIVE', behavior_readiness: 'INACTIVE', behavior_error: null,
 }
 
 function metric(value: number | null | undefined, suffix = ''): string {
   return value === null || value === undefined ? '—' : `${value.toFixed(1)}${suffix}`
+}
+
+function behaviorReadinessLabel(runtime: MonitoringStatus, diagnostics: CheatDiagnostics | null): string {
+  if (runtime.behavior_readiness === 'READY') {
+    return `Hoạt động · ${diagnostics?.inference_ms_mean ?? '—'} ms`
+  }
+  if (runtime.behavior_readiness === 'LOADING') return 'Đang tải model'
+  if (runtime.behavior_readiness === 'BUFFERING') return 'Đang thu thập 3,2 giây hình ảnh'
+  if (runtime.behavior_readiness === 'ERROR') return 'Tạm dừng do lỗi'
+  if (runtime.behavior_readiness === 'DISABLED') return 'Đã tắt trong cấu hình'
+  return 'Chờ bắt đầu'
 }
 
 export function MonitoringPage() {
@@ -178,6 +190,29 @@ export function MonitoringPage() {
       if (!trackingBuffer.current.matchesRuntime(message.runtime_instance_id, message.runtime_generation)) return
       setCheatStates(new Map(message.actors.map((actor) => [actor.actor_id, actor])))
       setCheatDiagnostics(message.diagnostics)
+      setRuntime((current) => ({ ...current, behavior_readiness: 'READY', behavior_error: null }))
+      return
+    }
+    if (message.type === 'behavior_status') {
+      const active = trackingBuffer.current.activateRuntime(message.runtime_instance_id, message.runtime_generation)
+      if (!active.accepted) return
+      if (active.reset) resetTracking()
+      setRuntime((current) => ({
+        ...current,
+        behavior_readiness: message.state,
+        behavior_error: message.error,
+      }))
+      return
+    }
+    if (message.type === 'action_error') {
+      const active = trackingBuffer.current.activateRuntime(message.runtime_instance_id, message.runtime_generation)
+      if (!active.accepted) return
+      if (active.reset) resetTracking()
+      setRuntime((current) => ({
+        ...current,
+        behavior_readiness: 'ERROR',
+        behavior_error: message.error,
+      }))
       return
     }
     if (message.type === 'cheat_event') { void loadSessionEvents(); return }
@@ -192,7 +227,14 @@ export function MonitoringPage() {
     const active = trackingBuffer.current.activateRuntime(message.runtime_instance_id, message.runtime_generation)
     if (!active.accepted) return
     if (active.reset) resetTracking()
-    setRuntime((current) => ({ ...current, state: message.state, error: message.error }))
+    setRuntime((current) => ({
+      ...current,
+      state: message.state,
+      error: message.error,
+      tracking_readiness: message.tracking_readiness,
+      behavior_readiness: message.behavior_readiness,
+      behavior_error: message.behavior_error,
+    }))
     setSynchronizing(message.synchronizing); synchronizingRef.current = message.synchronizing
     if (message.state === 'ERROR') {
       resetTracking(); setError('Không thể khởi tạo hoặc duy trì AI.'); setErrorDetail(message.error)
@@ -277,10 +319,11 @@ export function MonitoringPage() {
           <VideoMonitor ref={videoRef} mediaUrl={selected.video.media_url} title={selected.camera?.name ?? selected.video.original_filename} loop={selected.source_type === 'CAMERA'} realtime={selected.source_type === 'CAMERA'} overlay={<><TrackingCanvas videoRef={videoRef} buffer={trackingBuffer.current} revision={overlayRevision} candidateCodes={candidateCodes} debug={debugOverlay} showConfidence={debugOverlay} cheatStates={cheatStates} />{(synchronizing || runtime.state === 'INITIALIZING') && <div className="sync-indicator">{runtime.state === 'INITIALIZING' ? 'Đang khởi tạo nhận diện người…' : 'Đang đồng bộ theo video…'}</div>}</>} onPause={onVideoPause} onPlay={onVideoPlay} onSeeking={selected.source_type === 'CAMERA' ? undefined : () => resetTracking(true)} onSeeked={selected.source_type === 'CAMERA' ? undefined : seek} onEnded={() => { if (selected.source_type === 'VIDEO_UPLOAD' && runtimeActive && canOperate) void stop() }} />
           <div className="monitoring-actions">{runtime.state === 'INACTIVE' && canOperate && <button className="primary-button" disabled={selected.status !== 'READY'} type="button" onClick={() => void start()}>Bắt đầu giám sát</button>}{runtime.state === 'INITIALIZING' && <button className="primary-button" disabled type="button">Đang khởi tạo…</button>}{runtime.state === 'RUNNING' && canOperate && <button className="secondary-button" type="button" onClick={() => videoRef.current?.pause()}>Tạm dừng</button>}{runtime.state === 'PAUSED' && canOperate && <button className="primary-button" type="button" onClick={() => void videoRef.current?.play()}>Tiếp tục</button>}{runtimeActive && canOperate && <button className="danger-button subtle" type="button" onClick={() => setConfirmStop(true)}>Kết thúc giám sát</button>}</div>
         </div>
-        <aside className="card monitoring-side-panel"><p className="panel-label">TRẠNG THÁI HỆ THỐNG</p><div className={`runtime-state ${runtime.state.toLowerCase()}`}><span />{runtimeStateLabels[runtime.state]}</div><dl className="runtime-summary-list"><div><dt>Video</dt><dd>{runtimeActive ? 'Đang phát' : 'Sẵn sàng'}</dd></div><div><dt>Nhận diện người</dt><dd>{diagnostics ? 'Hoạt động' : runtime.state === 'INITIALIZING' ? 'Đang khởi tạo' : 'Chờ'}</dd></div><div><dt>Theo dõi</dt><dd>{socketConnected ? 'Đã kết nối' : 'Chưa kết nối'}</dd></div><div><dt>Người hiện tại</dt><dd>{activeTracks.length}</dd></div><div><dt>Active tracks</dt><dd>{diagnostics?.active_logical_actors ?? activeTracks.length}</dd></div><div><dt>Lost tracks</dt><dd>{diagnostics?.lost_logical_actors ?? 0}</dd></div><div><dt>Nguồn</dt><dd>{selected.source_type === 'CAMERA' ? selected.camera?.name : 'Video tải lên'}</dd></div><div><dt>Phân tích hành vi</dt><dd>{cheatDiagnostics ? `X3D-L · ${cheatDiagnostics.inference_ms_mean ?? '—'} ms` : runtimeActive ? 'Đang chờ 3,2 s đầu' : 'Chờ'}</dd></div></dl>
+        <aside className="card monitoring-side-panel"><p className="panel-label">TRẠNG THÁI HỆ THỐNG</p><div className={`runtime-state ${runtime.state.toLowerCase()}`}><span />{runtimeStateLabels[runtime.state]}</div><dl className="runtime-summary-list"><div><dt>Video</dt><dd>{runtime.state === 'PAUSED' ? 'Tạm dừng' : runtimeActive ? 'Đang phát' : 'Sẵn sàng'}</dd></div><div><dt>Nhận diện người</dt><dd>{runtime.tracking_readiness === 'READY' ? 'Hoạt động' : runtime.tracking_readiness === 'ERROR' ? 'Lỗi' : runtime.tracking_readiness === 'LOADING' ? 'Đang khởi tạo' : 'Chờ'}</dd></div><div><dt>Kết nối dữ liệu</dt><dd>{socketConnected ? 'Đã kết nối' : 'Chưa kết nối'}</dd></div><div><dt>Người hiện tại</dt><dd>{activeTracks.length}</dd></div>{debugOverlay && <><div><dt>Đang theo dõi</dt><dd>{diagnostics?.active_logical_actors ?? activeTracks.length}</dd></div><div><dt>Tạm mất dấu</dt><dd>{diagnostics?.lost_logical_actors ?? 0}</dd></div></>}<div><dt>Nguồn</dt><dd>{selected.source_type === 'CAMERA' ? selected.camera?.name : 'Video tải lên'}</dd></div><div><dt>Phân tích hành vi</dt><dd>{behaviorReadinessLabel(runtime, cheatDiagnostics)}</dd></div></dl>
+          {runtime.behavior_readiness === 'ERROR' && <p className="inline-alert warning" role="status">{runtime.behavior_error ?? 'Phân tích hành vi đang tạm dừng. Nhận diện người vẫn tiếp tục hoạt động.'}</p>}
           <div className="ai-alerts"><p className="panel-label">CẢNH BÁO AI {activeAlerts.length > 0 && <span className="ai-alert-count">{activeAlerts.length}</span>}</p>
             {activeAlerts.length ? <ul>{activeAlerts.map((state) => <li key={state.actor_id} className={`ai-alert ${state.label}`}><strong>{cheatLabels[state.label]}</strong><span>{state.session_candidate_id ? candidateNames.get(state.session_candidate_id) ?? state.seat_code : `Người #${state.track_id} (chưa xếp chỗ)`}</span><small>Điểm bất thường {Math.round(state.cheat_score * 100)}%</small></li>)}</ul>
-              : <p className="muted-text">{runtimeActive ? 'Không có hành vi đáng ngờ.' : 'Bắt đầu giám sát để phân tích.'}</p>}
+              : <p className="muted-text">{runtime.behavior_readiness === 'READY' ? 'Không có hành vi đáng ngờ.' : runtimeActive ? 'AI hành vi đang chuẩn bị; nhận diện người vẫn hoạt động.' : 'Bắt đầu giám sát để phân tích.'}</p>}
           </div>
           {canReadEvents && <div className="ai-events"><p className="panel-label">SỰ KIỆN ĐÃ GHI NHẬN ({sessionEventTotal})</p>
             {sessionEvents.length ? <ul aria-label="Sự kiện đã ghi nhận" tabIndex={0}>{sessionEvents.map((event) => <li key={event.id}><Link to={`/events?session=${selected.id}&event=${event.id}`}><BehaviorPill behavior={event.behavior_type} /><span>{actorLabel(event)}</span><small>{formatDurationMs(event.start_ms)} – {formatDurationMs(event.end_ms)}</small><EventStatusPill status={event.status} /></Link></li>)}</ul>
@@ -289,7 +332,7 @@ export function MonitoringPage() {
           </div>}
         </aside>
       </section>
-      <div className="monitoring-status-bar"><span className={socketConnected && runtime.state === 'RUNNING' ? 'online' : ''}>● {socketConnected ? 'Hệ thống trực tuyến' : 'Đang chờ kết nối'}</span><span>Video {formatFps(selected.video.fps)}</span><span>Phân tích {metric(diagnostics?.analysis_fps, ' FPS')}</span>{debugOverlay && <><span>Độ trễ {metric(diagnostics?.analysis_lag_ms, ' ms')}</span><span>Queue {diagnostics?.queue_size ?? '—'}</span></>}</div>
+      <div className="monitoring-status-bar"><span className={socketConnected && runtime.tracking_readiness === 'READY' ? 'online' : ''}>● {socketConnected ? 'Tracking trực tuyến' : 'Đang chờ kết nối'}</span><span>Video {formatFps(selected.video.fps)}</span><span>Phân tích {metric(diagnostics?.analysis_fps, ' FPS')}</span>{debugOverlay && <><span>Độ trễ {metric(diagnostics?.analysis_lag_ms, ' ms')}</span><span>Queue {diagnostics?.queue_size ?? '—'}</span></>}</div>
       {debugOverlay && <details className="card diagnostics-drawer"><summary>Chẩn đoán tracking</summary><div className="diagnostics-grid"><span>Raw tracks <strong>{diagnostics?.raw_track_count ?? '—'}</strong></span><span>Logical active / lost <strong>{diagnostics ? `${diagnostics.active_logical_actors} / ${diagnostics.lost_logical_actors}` : '—'}</strong></span><span>Recoveries <strong>{diagnostics?.recoveries_total ?? '—'}</strong></span><span>Dynamic pairs <strong>{diagnostics?.dynamic_pairs ?? '—'}</strong></span><span>Detector <strong>{metric(diagnostics?.detector_ms, ' ms')}</strong></span><span>Tracker <strong>{metric(diagnostics?.tracker_ms, ' ms')}</strong></span><span>GPU / VRAM <strong>{metric(diagnostics?.gpu_util_pct, '%')} / {metric(diagnostics?.vram_used_mb, ' MB')}</strong></span></div></details>}
     </> : <section className="card"><EmptyState title="Phiên thi không có video nguồn." description="Không thể mở nguồn video của phiên này." /></section>}
     <ConfirmDialog open={confirmStop} title="Kết thúc phiên giám sát?" description="Video realtime và quá trình theo dõi sẽ dừng." confirmLabel="Kết thúc" danger onCancel={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void stop() }} />

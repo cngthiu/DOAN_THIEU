@@ -41,6 +41,9 @@ class RuntimeHandle:
     error: str | None = None
     latest_diagnostics: dict[str, Any] | None = None
     latest_tracking_seq: int = 0
+    tracking_readiness: str = "LOADING"
+    behavior_readiness: str = "DISABLED"
+    behavior_error: str | None = None
 
 
 class MonitoringRuntimeManager:
@@ -117,8 +120,8 @@ class MonitoringRuntimeManager:
                     raise RuntimeError("AI Event persistence is not configured")
                 worker_arguments["event_callback"] = self._event_callback
             if profile.cheating_classifier.enabled:
-                # loaded (and compiled: about a minute after a restart) by the worker thread
-                # while the session is INITIALIZING, so this request returns at once
+                # Normally preloaded during application lifespan. The worker still
+                # initializes asynchronously as a safe fallback after a preload failure.
                 cheat_model = self._cheat_models.get(profile.cheating_classifier, profile.device)
                 worker_arguments["cheat_model"] = cheat_model
                 if self._event_callback is not None:
@@ -131,6 +134,9 @@ class MonitoringRuntimeManager:
                 profile=profile,
                 publisher=publisher,
                 runtime_instance_id=runtime_instance_id,
+                behavior_readiness=(
+                    "LOADING" if profile.cheating_classifier.enabled else "DISABLED"
+                ),
             )
             self._handles[session_id] = handle
             worker.start()
@@ -187,6 +193,9 @@ class MonitoringRuntimeManager:
                     "worker_instance_id": None,
                     "tracker_instance_id": None,
                     "tracking_seq": 0,
+                    "tracking_readiness": "INACTIVE",
+                    "behavior_readiness": "INACTIVE",
+                    "behavior_error": None,
                 }
             return {
                 "session_id": str(session_id),
@@ -206,6 +215,9 @@ class MonitoringRuntimeManager:
                     else None
                 ),
                 "tracking_seq": handle.latest_tracking_seq,
+                "tracking_readiness": handle.tracking_readiness,
+                "behavior_readiness": handle.behavior_readiness,
+                "behavior_error": handle.behavior_error,
             }
 
     def subscribe(self, session_id: uuid.UUID) -> Subscriber:
@@ -262,6 +274,10 @@ class MonitoringRuntimeManager:
             elif message.get("type") == "tracking":
                 handle.synchronizing = False
                 handle.latest_tracking_seq = int(message.get("tracking_seq", 0))
+                handle.tracking_readiness = "READY"
+            elif message.get("type") == "behavior_status":
+                handle.behavior_readiness = str(message.get("state", "ERROR"))
+                handle.behavior_error = message.get("error")
             publisher = handle.publisher
         publisher.publish(message)
 
@@ -291,6 +307,7 @@ class MonitoringRuntimeManager:
             ):
                 return
             handle.state = RuntimeState.RUNNING
+            handle.tracking_readiness = "READY"
         self._publish_state(session_id)
 
     def _terminal(
@@ -311,6 +328,8 @@ class MonitoringRuntimeManager:
             handle.state = state
             handle.synchronizing = False
             handle.error = error
+            if state == RuntimeState.ERROR:
+                handle.tracking_readiness = "ERROR"
         self._publish_state(session_id)
         if self._terminal_callback is not None:
             self._terminal_callback(session_id, state, error)
@@ -337,6 +356,9 @@ class MonitoringRuntimeManager:
                     else None
                 ),
                 "tracking_seq": handle.latest_tracking_seq,
+                "tracking_readiness": handle.tracking_readiness,
+                "behavior_readiness": handle.behavior_readiness,
+                "behavior_error": handle.behavior_error,
             }
             publisher = handle.publisher
         publisher.publish(message)
